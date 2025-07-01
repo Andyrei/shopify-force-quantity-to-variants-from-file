@@ -1,0 +1,258 @@
+/* Add at the very top of your style.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Montserrat:wght@400;700&display=swap');
+
+:root {
+    --color-primary: #00b144;
+    --color-primary-rgb: 0, 177, 68;
+    --color-accent: #1976d2;
+    --color-highlight: #ffd700;
+    --color-background: #181a1b;
+    --color-surface: #23272a;
+    --color-error: #b10c00;
+    --color-text-primary: #f5f5f5;
+    --color-text-secondary: #bdbdbd;
+
+    --font-main: 'Inter', 'Segoe UI', 'Roboto', 'Arial', sans-serif;
+}
+
+*,
+*+*,
+*::before,
+*::after  {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    font-size: 10px;
+}
+
+body{
+    background-color: var(--color-background);
+    color: var(--color-text-primary);
+    font-family: var(--font-main);
+    max-width: 90dvw;
+    margin: 0 auto;
+    font-size: 1.6rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    justify-content: space-between;
+}
+
+ul {
+    list-style: none;
+    margin: 2rem 0 0 0;
+    padding: 0;
+}
+
+li {
+    background: #222;
+    margin-bottom: 1rem;
+    padding: 1.2rem 1.6rem;
+    border-radius: 0.6rem;
+    color: var(--color-text-primary);
+    font-size: 1.5rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+h2, h3 {
+    color: var(--color-highlight);
+    margin-bottom: 1rem;
+}
+
+a {
+    color: var(--color-accent);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+
+header {
+    background: var(--color-surface);
+    padding: 2rem 0;
+    text-align: center;
+    border-bottom: 1px solid var(--color-accent);
+}
+
+header h1 {
+    color: var(--color-primary);
+    font-family: 'Montserrat', var(--font-main);
+    font-size: 2.8rem;
+    letter-spacing: 2px;
+}
+
+nav {
+    display: flex;
+    justify-content: center;
+    padding: 1rem 0;
+    margin-top: 1rem;
+}
+
+nav ul {
+    display: flex;
+    margin: 0;
+    gap: 2rem;
+}
+
+nav li {
+    background: transparent;
+    margin-bottom: 0;
+    padding: 0;
+    box-shadow: none;
+}
+
+nav a {
+    color: var(--color-text-primary);
+    font-weight: 600;
+    font-size: 1.4rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.4rem;
+    transition: all 0.2s ease;
+}
+
+nav a:hover {
+    background-color: var(--color-accent);
+    color: white;
+    text-decoration: none;
+}
+
+nav a.active {
+    background-color: var(--color-primary);
+    color: white;
+}
+
+main {
+    flex: 1;
+    width: 90%;
+    margin: 2rem auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem
+}
+
+body main div {
+    padding: 2rem;
+    background: var(--color-surface);
+    border-radius: 1rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+body .card #resources-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    
+}
+
+body .card #resources-list li div {
+    background-color: transparent;
+    display: flex;
+    gap: 1rem;
+}
+
+
+button{
+    background: var(--color-primary);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 0.6rem;
+    font-size: 1.4rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+body .card #resources-list li .del-btn {
+    background-color: var(--color-error);    
+}
+
+input[type="file"] {
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 0.6rem;
+    font-size: 1.4rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+pre.box {
+    background: var(--color-surface);
+    width: 100%;
+    border-radius: 1rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    text-wrap: auto;
+}
+
+.pagination {
+    margin-top:2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    background: var(--color-surface);
+    border-radius: 1rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+
+footer {
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    text-align: center;
+    padding: 1rem 0;
+    font-size: 1.2rem;
+    border-top: 1px solid var(--color-accent);
+}
+
+
+/* Table styling for sync results */
+.sync-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 2rem 0;
+    font-size: 1.5rem;
+    background: var(--color-surface);
+    border-radius: 1rem;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+}
+
+.sync-table caption {
+    caption-side: top;
+    font-size: 1.7rem;
+    font-weight: bold;
+    color: var(--color-highlight);
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+}
+
+.sync-table th, .sync-table td {
+    padding: 1rem 1.2rem;
+    text-align: left;
+}
+
+.sync-table th {
+    background: var(--color-primary);
+    color: #fff;
+    font-weight: 700;
+}
+
+.sync-table tr:nth-child(even) {
+    background: #23272a;
+}
+
+.sync-table tr:nth-child(odd) {
+    background: #181a1b;
+}
+
+.sync-table td {
+    border-bottom: 1px solid #333;
+}

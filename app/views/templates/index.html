@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Uploaded Files</h2>
+    <ul id="resources-list">
+        <li>Loading...</li>
+    </ul>
+</div>
+
+<div class="card">
+    <h2> UploadFile </h2>
+    <form method="POST" action="api/v1/uploadFile" enctype="multipart/form-data" id="UploadFile" style="margin-bottom: 1em;">
+        <input type="file" id="file" name="file" accept=".csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        <button type="submit">UPLOAD</button>
+    </form>
+    <pre class="box" style="max-width:100%">Here should be data returned from API response</pre>
+</div>
+
+{% endblock %}
