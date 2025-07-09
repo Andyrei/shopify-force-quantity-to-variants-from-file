@@ -98,19 +98,19 @@ async def upload_file(file: UploadFile = File(...)):
     resources_dir = os.path.join(PROJECT_ROOT, "resources")
     
     if file and file.filename:
-            # Ensure resources directory exists at project root
-            os.makedirs(resources_dir, exist_ok=True)
+        # Ensure resources directory exists at project root
+        os.makedirs(resources_dir, exist_ok=True)
 
-            # Create new filename with date
-            date_str = datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
-            filename, ext = os.path.splitext(file.filename)
-            new_filename = f"{filename}_{date_str}{ext}".lower()
-            file_path = os.path.join(resources_dir, new_filename)
+        # Create new filename with date
+        date_str = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+        filename, ext = os.path.splitext(file.filename)
+        new_filename = f"{filename}_{date_str}{ext}".lower()
+        file_path = os.path.join(resources_dir, new_filename)
 
-            # Save file
-            with open(file_path, "wb") as buffer:
-                buffer.write(await file.read())
+        # Save file
+        with open(file_path, "wb") as buffer:
+            buffer.write(await file.read())
 
-            return {"type": "categories", "filename": new_filename}
+        return {"type": "categories", "filename": new_filename}
 
     raise HTTPException(status_code=400, detail="No file uploaded")
