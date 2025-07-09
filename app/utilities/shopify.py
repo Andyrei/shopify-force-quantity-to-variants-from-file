@@ -158,7 +158,7 @@ def get_product_variants_by_sku(sku_list: list ) -> tuple[dict]:
             variables=gql_variables
     )
     
-    if not "errors" in result and result and result["productVariants"]["nodes"]:
+    if not "errors" in result and result:
         return result["productVariants"]["nodes"]
     
     return result

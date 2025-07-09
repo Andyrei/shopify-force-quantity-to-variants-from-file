@@ -11,7 +11,9 @@ def get_product_variants_and_sync(data_rows) -> list[dict, list]:
         prod_reference.append(row["sku"])
 
     product_variants = get_product_variants_by_sku(prod_reference)
-
+    
+    if not product_variants:
+        return [], prod_reference
     # Find missing SKUs
     found_skus = {variant["sku"] for variant in product_variants}
     missing_skus = [sku for sku in prod_reference if sku not in found_skus]
