@@ -2,3 +2,8 @@
 .env
 .env.*
 resources
+.DS_Store
+*.pyc
+__pycache__
+*.pyo
+*.pyd
