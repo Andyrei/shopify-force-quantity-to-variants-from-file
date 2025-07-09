@@ -267,3 +267,54 @@ def adjust_quantity_to_variant(inventories: list[dict]):
     )
     
     return result
+
+
+
+def add_to_sale_channels(resource_id: object, channels: list[dict]) -> dict | None:
+    """
+    Adds products to sale channels in Shopify.
+
+    :param shopify: The Shopify session object.
+    :param resource_id: The ID of the resource to be added to the sale channel.
+    :param channels: List of dictionaries containing product IDs and sale channel IDs.
+
+    :return: Response from the Shopify API or None if an error occurs.
+
+    Example resource_input:
+        {
+         "resource_id": "gid://shopify/Product/9834861953315",
+         "channels": [
+               {
+                   "publicationId": "gid://shopify/Publication/240302129443"
+               },
+               {
+                   "publicationId": "gid://shopify/Publication/240302326051"
+               }
+           ]
+        }
+    """
+    
+    gql_query = """#gql
+        mutation SetObjectToSaleChannel($resource_id: ID!, $channels: [PublicationInput!]!) {
+            publishablePublish(id: $resource_id input: $channels) {
+                publishable {
+                    resourcePublications(first:10){
+                        nodes{
+                            isPublished
+                        }
+                    }
+                }
+                userErrors {
+                field
+                message
+                }
+            }
+        }
+    """
+    res = shopify_query_graph(
+        query=gql_query,
+        operation_name="SetObjectToSaleChannel",
+        variables={"resource_id": resource_id, "channels": channels}
+    )
+
+    return res

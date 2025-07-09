@@ -22,7 +22,7 @@ document.addEventListener("DOMContentLoaded", function() {
                     : `Response error: ${res.status} - ${result.detail}`;
 
                 loadFiles()
-                syncFile(this, result.filename)
+                // syncFile(this, result.filename)
             } catch (err) {
                 responseBox.textContent = "Error: " + err;
             }

@@ -1,25 +1,6 @@
 from collections import defaultdict
 from unittest import result
-from app.utilities.shopify import adjust_quantity_to_variant, get_product_variants_by_sku, set_activate_quantity_on_location
-
-
-
-def __group_variants_by_product_id(product_variants, data_rows):
-    """
-    
-    Example usage:
-        grouped = group_variants_by_product_id(product_variants)
-        for product_id, variants in grouped.items():
-            print(product_id, variants)
-        
-    """
-    grouped = defaultdict(list)
-    for variant in product_variants:
-        for row in data_rows:
-            if variant["sku"] == row["sku"]:
-                variant["quantity"] = row["qta"]
-                variant["location"] = row["id sede"]
-    return dict(grouped)
+from app.utilities.shopify import add_to_sale_channels, adjust_quantity_to_variant, get_product_variants_by_sku, set_activate_quantity_on_location
 
 
 def get_product_variants_and_sync(data_rows) -> list[dict, list]:
@@ -36,20 +17,42 @@ def get_product_variants_and_sync(data_rows) -> list[dict, list]:
     missing_skus = [sku for sku in prod_reference if sku not in found_skus]
     
     inventories = []
+    result = None
     for variant in product_variants:
         for row in data_rows:
+            publications = []
             if variant["sku"] == row["sku"]:
                 inventory_item = variant["inventoryItem"]["id"]
                 location_id = f"gid://shopify/Location/{row["id sede"]}"
+                delta_quantity = row["qta"]
+                sale_channels = row.get("canali di vendita", row.get("Canale di Vendita", ""))
                 
+                if sale_channels:
+                    # Handle both comma-separated strings and single int values
+                    if isinstance(sale_channels, int):
+                        sale_channel_list = [str(sale_channels)]
+                    elif isinstance(sale_channels, str):
+                        sale_channel_list = [s.strip() for s in sale_channels.split(",") if s.strip()]
+                    else:
+                        sale_channel_list = []
+
+                    for sale_channel in sale_channel_list:
+                        publications.append({
+                            "publicationId": f"gid://shopify/Publication/{sale_channel}"
+                        })
+                    
+                    add_to_sale_channels(
+                        resource_id=variant["product"]["id"],
+                        channels=publications,
+                    )
                 set_activate_quantity_on_location(inventoryItemId=inventory_item, locationId=location_id)
-                
                 inventories.append({
-                    "delta": 2, # quantità
+                    "delta": delta_quantity, # quantità
                     "inventoryItemId": inventory_item,
                     "locationId": location_id
                 })
+        
+
     result = adjust_quantity_to_variant(inventories=inventories)
     
-    print(result)
     return result, missing_skus
