@@ -1,5 +1,5 @@
 # Use Python 3.12 slim image as base
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -11,6 +11,7 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
         gcc \
         g++ \
@@ -25,7 +26,10 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 # Copy the application code
 COPY app/ ./app/
-COPY resources/ ./resources/
+
+# Create resources directory and copy if it exists
+# Uncomment if resources directory is needed
+# COPY resources/ ./resources/  
 
 # Create non-root user for security
 RUN adduser --disabled-password --gecos '' --uid 1000 appuser \
