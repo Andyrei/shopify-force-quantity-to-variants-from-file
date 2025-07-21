@@ -1,0 +1,14 @@
+# Add Docker-related files to .gitignore
+logs/
+*.log
+
+# Docker volumes
+docker-volumes/
+
+# Environment files (if you create them later)
+.env
+.env.local
+.env.production
+
+# Docker build context (if needed)
+.dockerignore
