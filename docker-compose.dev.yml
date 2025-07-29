@@ -7,4 +7,7 @@ services:
     environment:
       - ENVIRONMENT=development
       - LOG_LEVEL=debug
+      # Add your Shopify credentials here
+      - ACCESS_TOKEN=${ACCESS_TOKEN}
+      - STORE_NAME=${STORE_NAME}
     command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

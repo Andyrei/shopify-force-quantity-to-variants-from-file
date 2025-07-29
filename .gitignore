@@ -1,6 +1,7 @@
 .venv
 .env
 .env.*
+!.env.example
 resources
 .DS_Store
 *.pyc

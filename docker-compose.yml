@@ -12,6 +12,8 @@ services:
     environment:
       - PYTHONPATH=/app
       - ENVIRONMENT=production
+      - ACCESS_TOKEN=${ACCESS_TOKEN}
+      - STORE_NAME=${STORE_NAME}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/docs')"]
