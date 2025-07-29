@@ -1,7 +1,6 @@
-import base64
 from datetime import datetime
 import os
-from fastapi import APIRouter, File, Path, Request, Response, UploadFile, HTTPException
+from fastapi import APIRouter, File, Path, Request, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 import pandas as pd
 
