@@ -58,6 +58,12 @@ def shopify_query_graph(query: str=None, operation_name: str=None, variables: di
     
     shopify_session = shopify_connection()
     
+    if shopify_session is None:
+        print("ERROR: Failed to establish Shopify connection")
+        print(f"DEBUG: ACCESS_TOKEN exists: {bool(os.environ.get('ACCESS_TOKEN'))}")
+        print(f"DEBUG: STORE_NAME exists: {bool(os.environ.get('STORE_NAME'))}")
+        return {"error": "Failed to establish Shopify connection. Check ACCESS_TOKEN and STORE_NAME environment variables."}
+    
     if query is None and operation_name:
         gql_query_path = Path(f"{operation_name}.graphql")
         if gql_query_path.exists():
@@ -157,6 +163,55 @@ def get_product_variants_by_sku(sku_list: list ) -> tuple[dict]:
             operation_name="GetProductVariantBySku",
             variables=gql_variables
     )
+    
+    if "error" in result:
+        print(f"ERROR in get_product_variants_by_sku: {result['error']}")
+        return None
+    
+    if not "errors" in result and result:
+        return result["productVariants"]["nodes"]
+    
+    return result
+
+def get_product_variants_by_barcode(barcode_list: list ) -> tuple[dict]:
+    gql_query="""#gql
+        query GetProductVariantByBarcode($query: String!) {
+            productVariants(first: 250, query: $query) {
+                nodes {
+                    id
+                    title
+                    sku
+                    barcode
+                    product{
+                        id
+                    }
+                    inventoryItem {
+                        id
+                    }
+                }
+            }
+        }
+    """
+    # Build the query string for one or multiple SKUs
+    if len(barcode_list) == 1:
+        query_str = f"barcode:{barcode_list[0]}"
+    else:
+        query_str = " OR ".join([f"barcode:{b}" for b in barcode_list])
+
+
+    gql_variables = {
+        "query": query_str
+    }
+    
+    result = shopify_query_graph(
+            query=gql_query,
+            operation_name="GetProductVariantByBarcode",
+            variables=gql_variables
+    )
+    
+    if "error" in result:
+        print(f"ERROR in get_product_variants_by_barcode: {result['error']}")
+        return None
     
     if not "errors" in result and result:
         return result["productVariants"]["nodes"]

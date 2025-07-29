@@ -79,15 +79,29 @@ async def sync_file(
         else:
             raise HTTPException(status_code=400, detail="Unsupported file type")
         
+        print(f"DEBUG: DataFrame columns: {df.columns.tolist()}")
+        print(f"DEBUG: DataFrame shape: {df.shape}")
+        print(f"DEBUG: First row: {df.iloc[0].to_dict() if len(df) > 0 else 'Empty DataFrame'}")
+        
         # Pass both columns and rows (as records) to the sync function
-        sync_result, missing_sync = get_product_variants_and_sync(df.to_dict(orient="records"))
+        data_records = df.to_dict(orient="records")
+        print(f"DEBUG: Calling get_product_variants_and_sync with {len(data_records)} records")
+        
+        sync_result, missing_sync, found_refs = get_product_variants_and_sync(data_records)
+        
+        print(f"DEBUG: Sync completed. Result: {type(sync_result)}, Missing: {len(missing_sync)}, Found: {len(found_refs)}")
+        
         return {
-            "detail": f"File '{filename}' syncing right now!",
+            "detail": f"File '{filename}' syncing right now!" if sync_result and not missing_sync else f"Matching variants found missing in '{filename}'",
             "data": sync_result,
-            "missing_sync": missing_sync
-            
+            "missing_sync": missing_sync,
+            "found_refs": found_refs
         }
     except Exception as e:
+        print(f"ERROR: Exception in sync_file: {str(e)}")
+        print(f"ERROR: Exception type: {type(e)}")
+        import traceback
+        print(f"ERROR: Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error syncing file: {e}")
     
 
