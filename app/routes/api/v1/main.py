@@ -79,6 +79,9 @@ async def sync_file(
         else:
             raise HTTPException(status_code=400, detail="Unsupported file type")
         
+        # Transform all column headers to lowercase
+        df.columns = df.columns.str.lower()
+        
         print(f"DEBUG: DataFrame columns: {df.columns.tolist()}")
         print(f"DEBUG: DataFrame shape: {df.shape}")
         print(f"DEBUG: First row: {df.iloc[0].to_dict() if len(df) > 0 else 'Empty DataFrame'}")
