@@ -10,8 +10,8 @@
    ```
 
 2. **Access the application:**
-   - Open your browser and go to `http://localhost:8000`
-   - API documentation: `http://localhost:8000/docs`
+   - Open your browser and go to `http://localhost:9999`
+   - API documentation: `http://localhost:9999/docs`
 
 3. **Stop the application:**
    ```bash
@@ -27,7 +27,7 @@
 
 2. **Run the container:**
    ```bash
-   docker run -p 8000:8000 -v $(pwd)/resources:/app/resources shopify-quantity-manager
+   docker run -p 9999:9999 -v $(pwd)/resources:/app/resources shopify-quantity-manager
    ```
 
 ## Production Deployment
@@ -39,7 +39,7 @@ docker-compose --profile production up --build -d
 ```
 
 This will:
-- Run the FastAPI app on port 8000 (internal)
+- Run the FastAPI app on port 9999 (internal)
 - Run nginx on port 80 (external access)
 - Provide load balancing and static file serving
 

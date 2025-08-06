@@ -33,4 +33,4 @@ def read_root(req: Request) -> HTMLResponse:
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=9999, log_level="info")
