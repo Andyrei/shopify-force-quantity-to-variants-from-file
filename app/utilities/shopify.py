@@ -114,7 +114,7 @@ def check_product_exists(shopify_session: ShopifyConnection, channel_reference: 
             shopify_session=shopify_session,
             operation_name="CheckProductExists",
             variables={
-                "query": f"sku:{product_reference} AND id:{channel_reference}"
+                "query": f"barcode:{product_reference} AND id:{channel_reference}"
             }
     )
 
@@ -137,6 +137,7 @@ def get_product_variants_by_sku(sku_list: list ) -> tuple[dict]:
                     id
                     title
                     sku
+                    barcode
                     product{
                         id
                     }
@@ -172,6 +173,45 @@ def get_product_variants_by_sku(sku_list: list ) -> tuple[dict]:
         return result["productVariants"]["nodes"]
     
     return result
+
+def detect_identifier_type(identifiers: list) -> str:
+    """
+    Detect whether a list of identifiers are SKUs or barcodes.
+    
+    :param identifiers: List of product identifiers
+    :return: "barcode" if all identifiers are numeric, "sku" otherwise
+    """
+    if not identifiers:
+        return "sku"  # Default to SKU if empty list
+    
+    str_identifiers = [str(identifier) for identifier in identifiers]
+    return "barcode" if all(identifier.isdigit() for identifier in str_identifiers) else "sku"
+
+def get_product_variants_by_identifier(identifier_list: list, identifier_type: str = "auto") -> list[dict]:
+    """
+    Get product variants by SKU or barcode with automatic detection or explicit type.
+    
+    :param identifier_list: List of SKUs or barcodes to search for
+    :param identifier_type: Type of identifier - "sku", "barcode", or "auto" for automatic detection
+    :return: List of product variant nodes
+    """
+    if not identifier_list:
+        return []
+    
+    # Auto-detect identifier type if not specified
+    if identifier_type == "auto":
+        identifier_type = detect_identifier_type(identifier_list)
+        print(f"DEBUG: Auto-detected identifier type: {identifier_type}")
+    
+    print(f"DEBUG: Searching for {len(identifier_list)} {identifier_type}s")
+    
+    # Use the appropriate function based on identifier type
+    if identifier_type == "barcode":
+        return get_product_variants_by_barcode(identifier_list)
+    elif identifier_type == "sku":
+        return get_product_variants_by_sku(identifier_list)
+    else:
+        raise ValueError(f"Invalid identifier_type: {identifier_type}. Must be 'sku', 'barcode', or 'auto'")
 
 def get_product_variants_by_barcode(barcode_list: list ) -> tuple[dict]:
     gql_query="""#gql
