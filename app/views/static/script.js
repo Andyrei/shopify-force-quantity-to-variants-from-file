@@ -272,16 +272,35 @@ document.addEventListener("DOMContentLoaded", function() {
         if (data && Array.isArray(data.missing_sync) && data.missing_sync.length > 0) {
             return `
             <div class="missing-sync">
-                <h3>SKUs not updated (not found in store):</h3>
-                <ul>
-                    ${data.missing_sync.map(sku => `<li>${sku}</li>`).join("")}
-                </ul>
+                <h3>${data.missing_sync.length} SKUs not updated (not found in store):</h3> (${((data.missing_sync.length / (data.total_records || data.missing_sync.length)) * 100).toFixed(2)}% of total items)
+                <button class="copy-all-btn" style="display: flex;justify-content: center;align-items: center;" onclick='copyMissingSKUs(${JSON.stringify(data.missing_sync)})'>
+                    <svg width="50px" height="50px" viewBox="0 0 1024 1024" class="icon"  version="1.1" xmlns="http://www.w3.org/2000/svg"><path d="M589.3 260.9v30H371.4v-30H268.9v513h117.2v-304l109.7-99.1h202.1V260.9z" fill="#E1F0FF" /><path d="M516.1 371.1l-122.9 99.8v346.8h370.4V371.1z" fill="#E1F0FF" /><path d="M752.7 370.8h21.8v435.8h-21.8z" fill="#446EB1" /><path d="M495.8 370.8h277.3v21.8H495.8z" fill="#446EB1" /><path d="M495.8 370.8h21.8v124.3h-21.8z" fill="#446EB1" /><path d="M397.7 488.7l-15.4-15.4 113.5-102.5 15.4 15.4z" fill="#446EB1" /><path d="M382.3 473.3h135.3v21.8H382.3z" fill="#446EB1" /><path d="M382.3 479.7h21.8v348.6h-21.8zM404.1 806.6h370.4v21.8H404.1z" fill="#446EB1" /><path d="M447.7 545.1h261.5v21.8H447.7zM447.7 610.5h261.5v21.8H447.7zM447.7 675.8h261.5v21.8H447.7z" fill="#6D9EE8" /><path d="M251.6 763h130.7v21.8H251.6z" fill="#446EB1" /><path d="M251.6 240.1h21.8v544.7h-21.8zM687.3 240.1h21.8v130.7h-21.8zM273.4 240.1h108.9v21.8H273.4z" fill="#446EB1" /><path d="M578.4 240.1h130.7v21.8H578.4zM360.5 196.5h21.8v108.9h-21.8zM382.3 283.7h196.1v21.8H382.3zM534.8 196.5h65.4v21.8h-65.4z" fill="#446EB1" /><path d="M360.5 196.5h65.4v21.8h-65.4zM404.1 174.7h152.5v21.8H404.1zM578.4 196.5h21.8v108.9h-21.8z" fill="#446EB1" /></svg>
+                    <span> Copy All</span>
+                </button>
             </div>
             `;
         }
         return "";
     }
 
+    // Make this function global so it can be called from inline onclick
+    window.copyMissingSKUs = function(missing_skus) {
+        const skus = missing_skus || [];
+        const btn = document.querySelector(".copy-all-btn");
+        const originalText = btn.querySelector("span").innerHTML;
+
+        if (skus.length === 0) return;
+        const textToCopy = skus.join("\n");
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            btn.querySelector("span").innerHTML = "Copied!";
+            setTimeout(() => {
+                btn.querySelector("span").innerHTML = originalText;
+            }, 2000);
+        }).catch(err => {
+            alert("Failed to copy SKUs: " + err);
+        });
+    }
+    
     function buildSyncTable(data) {
         let html = ""
         const missed = buildMissingSyncList(data); // Add missing SKUs section first
@@ -293,8 +312,8 @@ document.addEventListener("DOMContentLoaded", function() {
             !data.data.inventoryAdjustQuantities.inventoryAdjustmentGroup ||
             !Array.isArray(data.data.inventoryAdjustQuantities.inventoryAdjustmentGroup.changes)
         ) {
-            html += "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
             html += missed
+            html += "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
             return html;
         }
         const changes = data.data.inventoryAdjustQuantities.inventoryAdjustmentGroup.changes;

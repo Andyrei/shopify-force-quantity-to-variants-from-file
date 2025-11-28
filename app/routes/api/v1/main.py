@@ -192,6 +192,7 @@ async def sync_file(
         
         return {
             "detail": f"File '{filename}' syncing right now!" if sync_result and not missing_sync else f"Matching variants found missing in '{filename}'",
+            "total_records": len(data_records),
             "data": sync_result,
             "missing_sync": missing_sync,
             "found_refs": found_refs
