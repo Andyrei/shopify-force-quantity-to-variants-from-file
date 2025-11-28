@@ -129,10 +129,10 @@ def check_product_exists(shopify_session: ShopifyConnection, channel_reference: 
     exists = True
     return exists, time_elapsed
 
-def get_product_variants_by_sku(sku_list: list ) -> tuple[dict]:
+def get_product_variants_by_sku(sku_list: list ) -> list[dict]:
     gql_query="""#gql
-        query GetProductVariantBySku($query: String!) {
-            productVariants(first: 250, query: $query) {
+        query GetProductVariantBySku($query: String!, $after: String) {
+            productVariants(first: 250, query: $query, after: $after) {
                 nodes {
                     id
                     title
@@ -145,6 +145,10 @@ def get_product_variants_by_sku(sku_list: list ) -> tuple[dict]:
                         id
                     }
                 }
+                pageInfo {
+                    hasNextPage
+                    endCursor
+                }
             }
         }
     """
@@ -154,25 +158,42 @@ def get_product_variants_by_sku(sku_list: list ) -> tuple[dict]:
     else:
         query_str = " OR ".join([f"sku:{s}" for s in sku_list])
 
-
-    gql_variables = {
-        "query": query_str
-    }
+    all_variants = []
+    has_next_page = True
+    cursor = None
     
-    result = shopify_query_graph(
-            query=gql_query,
-            operation_name="GetProductVariantBySku",
-            variables=gql_variables
-    )
+    while has_next_page:
+        gql_variables = {
+            "query": query_str,
+            "after": cursor
+        }
+        
+        result = shopify_query_graph(
+                query=gql_query,
+                operation_name="GetProductVariantBySku",
+                variables=gql_variables
+        )
+        
+        if "error" in result:
+            print(f"ERROR in get_product_variants_by_sku: {result['error']}")
+            return None
+        
+        if "errors" in result:
+            return None
+            
+        if result and "productVariants" in result:
+            variants = result["productVariants"]["nodes"]
+            all_variants.extend(variants)
+            
+            page_info = result["productVariants"]["pageInfo"]
+            has_next_page = page_info.get("hasNextPage", False)
+            cursor = page_info.get("endCursor")
+            
+            print(f"DEBUG: Fetched {len(variants)} variants, total so far: {len(all_variants)}")
+        else:
+            break
     
-    if "error" in result:
-        print(f"ERROR in get_product_variants_by_sku: {result['error']}")
-        return None
-    
-    if not "errors" in result and result:
-        return result["productVariants"]["nodes"]
-    
-    return result
+    return all_variants
 
 def detect_identifier_type(identifiers: list) -> str:
     """
@@ -213,10 +234,10 @@ def get_product_variants_by_identifier(identifier_list: list, identifier_type: s
     else:
         raise ValueError(f"Invalid identifier_type: {identifier_type}. Must be 'sku', 'barcode', or 'auto'")
 
-def get_product_variants_by_barcode(barcode_list: list ) -> tuple[dict]:
+def get_product_variants_by_barcode(barcode_list: list ) -> list[dict]:
     gql_query="""#gql
-        query GetProductVariantByBarcode($query: String!) {
-            productVariants(first: 250, query: $query) {
+        query GetProductVariantByBarcode($query: String!, $after: String) {
+            productVariants(first: 250, query: $query, after: $after) {
                 nodes {
                     id
                     title
@@ -229,6 +250,10 @@ def get_product_variants_by_barcode(barcode_list: list ) -> tuple[dict]:
                         id
                     }
                 }
+                pageInfo {
+                    hasNextPage
+                    endCursor
+                }
             }
         }
     """
@@ -238,25 +263,42 @@ def get_product_variants_by_barcode(barcode_list: list ) -> tuple[dict]:
     else:
         query_str = " OR ".join([f"barcode:{b}" for b in barcode_list])
 
-
-    gql_variables = {
-        "query": query_str
-    }
+    all_variants = []
+    has_next_page = True
+    cursor = None
     
-    result = shopify_query_graph(
-            query=gql_query,
-            operation_name="GetProductVariantByBarcode",
-            variables=gql_variables
-    )
+    while has_next_page:
+        gql_variables = {
+            "query": query_str,
+            "after": cursor
+        }
+        
+        result = shopify_query_graph(
+                query=gql_query,
+                operation_name="GetProductVariantByBarcode",
+                variables=gql_variables
+        )
+        
+        if "error" in result:
+            print(f"ERROR in get_product_variants_by_barcode: {result['error']}")
+            return None
+        
+        if "errors" in result:
+            return None
+            
+        if result and "productVariants" in result:
+            variants = result["productVariants"]["nodes"]
+            all_variants.extend(variants)
+            
+            page_info = result["productVariants"]["pageInfo"]
+            has_next_page = page_info.get("hasNextPage", False)
+            cursor = page_info.get("endCursor")
+            
+            print(f"DEBUG: Fetched {len(variants)} variants, total so far: {len(all_variants)}")
+        else:
+            break
     
-    if "error" in result:
-        print(f"ERROR in get_product_variants_by_barcode: {result['error']}")
-        return None
-    
-    if not "errors" in result and result:
-        return result["productVariants"]["nodes"]
-    
-    return result
+    return all_variants
 
 def set_activate_quantity_on_location(inventoryItemId: str, locationId: str):
     gql_query = """#gql

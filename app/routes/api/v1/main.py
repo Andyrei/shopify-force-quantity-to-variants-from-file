@@ -186,15 +186,16 @@ async def sync_file(
         data_records = df.to_dict(orient="records")
         print(f"DEBUG: Calling get_product_variants_and_sync with {len(data_records)} records")
         
-        sync_result, missing_sync, found_refs = get_product_variants_and_sync(data_records)
+        sync_result, missing_rows, duplicate_rows, found_refs = get_product_variants_and_sync(data_records)
         
-        print(f"DEBUG: Sync completed. Result: {type(sync_result)}, Missing: {len(missing_sync)}, Found: {len(found_refs)}")
+        print(f"DEBUG: Sync completed. Result: {type(sync_result)}, Missing: {len(missing_rows)}, Found: {len(found_refs)}")
         
         return {
-            "detail": f"File '{filename}' syncing right now!" if sync_result and not missing_sync else f"Matching variants found missing in '{filename}'",
+            "detail": f"File '{filename}' syncing right now!" if sync_result and not missing_rows else f"Matching variants found missing in '{filename}'",
             "total_records": len(data_records),
             "data": sync_result,
-            "missing_sync": missing_sync,
+            "missing_rows": missing_rows,
+            "duplicate_rows": duplicate_rows,
             "found_refs": found_refs
         }
     except Exception as e:

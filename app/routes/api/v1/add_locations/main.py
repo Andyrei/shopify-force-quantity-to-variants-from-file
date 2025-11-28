@@ -1,5 +1,3 @@
-from collections import defaultdict
-from unittest import result
 from app.utilities.shopify import (
     add_to_sale_channels, 
     adjust_quantity_to_variant, 
@@ -9,7 +7,7 @@ from app.utilities.shopify import (
 )
 
 
-def get_product_variants_and_sync(data_rows) -> list[dict, list, list]:
+def get_product_variants_and_sync(data_rows) -> list[dict, list, list, list]:
     
     print(f"DEBUG: Starting sync with {len(data_rows)} rows")
     
@@ -24,6 +22,8 @@ def get_product_variants_and_sync(data_rows) -> list[dict, list, list]:
             prod_reference.append(str(row["sku"]))
 
     print(f"DEBUG: Extracted {len(prod_reference)} references")
+    print(f"DEBUG: Unique references: {len(set(prod_reference))}")
+    print(f"DEBUG: Duplicate references in file: {len(prod_reference) - len(set(prod_reference))}")
     print(f"DEBUG: Sample references: {prod_reference[:3] if prod_reference else 'None'}")
 
     # Determine identifier type - prioritize explicit field presence, fallback to auto-detection
@@ -59,12 +59,32 @@ def get_product_variants_and_sync(data_rows) -> list[dict, list, list]:
             variant_map[ref] = variant
             found_refs.add(ref)
     
-    # Find missing references
-    missing_refs = [ref for ref in prod_reference if ref not in found_refs]
+    # Find missing rows and duplicate rows separately
+    missing_rows = []
+    duplicate_rows = []
+    seen_refs = {}
+    
+    for i, row in enumerate(data_rows):
+        if identifier_type == "barcode":
+            row_ref = str(row.get("barcode"))
+        else:
+            row_ref = str(row.get("sku"))
+        
+        if row_ref not in found_refs and row_ref not in missing_rows:
+            # This SKU doesn't exist in Shopify
+            missing_rows.append(row["sku"] if "sku" in row else row["barcode"])
+        elif row_ref in seen_refs and row_ref not in duplicate_rows:
+            # This SKU was already processed - it's a duplicate in the file
+            duplicate_rows.append(row["sku"] if "sku" in row else row["barcode"])
+        else:
+            # First occurrence of this SKU
+            seen_refs[row_ref] = i
     
     print(f"DEBUG: prod_reference types: {[type(ref).__name__ for ref in prod_reference[:3]]}")
     print(f"DEBUG: found_refs types: {[type(ref).__name__ for ref in list(found_refs)[:3]]}")
-    print(f"DEBUG: Missing references: {len(missing_refs)}")
+    print(f"DEBUG: Missing rows: {len(missing_rows)}")
+    print(f"DEBUG: Duplicate rows: {len(duplicate_rows)}")
+    print(f"DEBUG: Missing unique SKUs: {len(set(prod_reference) - found_refs)}")
     print(f"DEBUG: Found references: {len(found_refs)}")
     
     inventories = []
@@ -117,7 +137,7 @@ def get_product_variants_and_sync(data_rows) -> list[dict, list, list]:
                     })
                     
             # Only execute Shopify operations if no variants are missing
-            if not missing_refs:
+            if not missing_rows:
                 if publications:
                     add_to_sale_channels(
                         resource_id=variant["product"]["id"],
@@ -132,7 +152,7 @@ def get_product_variants_and_sync(data_rows) -> list[dict, list, list]:
         
 
     # Only adjust quantities if no variants are missing
-    if not missing_refs and inventories:
+    if not missing_rows and inventories:
         result = adjust_quantity_to_variant(inventories=inventories)
     
-    return result, missing_refs, found_refs
+    return result, missing_rows, duplicate_rows, found_refs
