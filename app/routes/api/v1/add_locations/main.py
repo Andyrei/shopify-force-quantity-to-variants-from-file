@@ -7,9 +7,9 @@ from app.utilities.shopify import (
 )
 
 
-def get_product_variants_and_sync(data_rows) -> list[dict, list, list, list]:
+def get_product_variants_and_sync(data_rows, store_id: str = None) -> list[dict, list, list, list]:
     
-    print(f"DEBUG: Starting sync with {len(data_rows)} rows")
+    print(f"DEBUG: Starting sync with {len(data_rows)} rows for store: {store_id}")
     
     prod_reference = []
     
@@ -35,13 +35,13 @@ def get_product_variants_and_sync(data_rows) -> list[dict, list, list, list]:
         identifier_type = detect_identifier_type(prod_reference)
     
     print(f"DEBUG: Using {identifier_type} search (field-based: {use_barcode})")
-    product_variants = get_product_variants_by_identifier(prod_reference, identifier_type)
+    product_variants = get_product_variants_by_identifier(prod_reference, identifier_type, store_id=store_id)
     
     print(f"DEBUG: Found {len(product_variants) if product_variants else 0} variants from Shopify")
     
     if not product_variants:
         print("DEBUG: No variants found, returning early")
-        return [], prod_reference, []
+        return [], prod_reference, [], []
     
     # Create a mapping of variants by their reference (barcode or sku)
     variant_map = {}
@@ -142,8 +142,9 @@ def get_product_variants_and_sync(data_rows) -> list[dict, list, list, list]:
                     add_to_sale_channels(
                         resource_id=variant["product"]["id"],
                         channels=publications,
+                        store_id=store_id
                     )
-                set_activate_quantity_on_location(inventoryItemId=inventory_item, locationId=location_id_full)
+                set_activate_quantity_on_location(inventoryItemId=inventory_item, locationId=location_id_full, store_id=store_id)
                 inventories.append({
                     "delta": delta_quantity, # quantità
                     "inventoryItemId": inventory_item,
@@ -153,6 +154,6 @@ def get_product_variants_and_sync(data_rows) -> list[dict, list, list, list]:
 
     # Only adjust quantities if no variants are missing
     if not missing_rows and inventories:
-        result = adjust_quantity_to_variant(inventories=inventories)
+        result = adjust_quantity_to_variant(inventories=inventories, store_id=store_id)
     
     return result, missing_rows, duplicate_rows, found_refs

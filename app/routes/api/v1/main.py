@@ -227,6 +227,12 @@ async def sync_file(
     store_name = get_current_store_name(request)
     if not store_name:
         raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    
+    # Get store_id from header
+    store_id = request.headers.get("X-Selected-Store")
+    if not store_id:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    
     resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
     file_path = os.path.join(resources_dir, filename)
 
@@ -249,11 +255,11 @@ async def sync_file(
         print(f"DEBUG: DataFrame shape: {df.shape}")
         print(f"DEBUG: First row: {df.iloc[0].to_dict() if len(df) > 0 else 'Empty DataFrame'}")
         
-        # Pass data to the sync function (no global parameters needed now)
+        # Pass data to the sync function with store_id
         data_records = df.to_dict(orient="records")
-        print(f"DEBUG: Calling get_product_variants_and_sync with {len(data_records)} records")
+        print(f"DEBUG: Calling get_product_variants_and_sync with {len(data_records)} records and store_id: {store_id}")
         
-        sync_result, missing_rows, duplicate_rows, found_refs = get_product_variants_and_sync(data_records)
+        sync_result, missing_rows, duplicate_rows, found_refs = get_product_variants_and_sync(data_records, store_id=store_id)
         
         print(f"DEBUG: Sync completed. Result: {type(sync_result)}, Missing: {len(missing_rows)}, Found: {len(found_refs)}")
         

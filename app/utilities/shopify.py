@@ -1,6 +1,7 @@
 import os
 import shopify
 import json
+import toml
 from pathlib import Path
 from datetime import datetime
 from datetime import datetime
@@ -10,10 +11,42 @@ from shopify.base import ShopifyConnection
 RESOURCE -> https://github.com/Shopify/shopify_python_api
 """
 
-def shopify_connection(credentials: dict = None) -> tuple[shopify.Session | None, float]:
+# Load config once at module level
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+config = toml.load(PROJECT_ROOT / "config_stores.toml")
+
+def get_store_credentials(store_id: str = None) -> dict:
+    """
+    Get store credentials from config based on store_id.
+    Falls back to environment variables if store_id is not provided.
+    """
+    if store_id:
+        stores = config.get("stores", {})
+        if store_id in stores:
+            store_config = stores[store_id]
+            return {
+                "access_token": store_config.get("ACCESS_TOKEN"),
+                "base_url": f"{store_config.get('STORE_NAME')}.myshopify.com",
+                "api_version": store_config.get("API_VERSION", "2025-04")
+            }
+    
+    # Fallback to environment variables
+    access_token = os.environ.get("ACCESS_TOKEN")
+    store_name = os.environ.get("STORE_NAME")
+    if access_token and store_name:
+        return {
+            "access_token": access_token,
+            "base_url": f"{store_name}.myshopify.com",
+            "api_version": os.environ.get("API_VERSION", "2025-04")
+        }
+    
+    return None
+
+def shopify_connection(credentials: dict = None, store_id: str = None) -> tuple[shopify.Session | None, float]:
     """
         Connect to Shopify API using the provided credentials.
         :param credentials: dict: The credentials for the Shopify API.
+        :param store_id: str: The store ID from config (e.g., 'murphy', 'refrigiwear')
         :return:
             - shopify session: The Shopify API client.
             - float: The time taken to establish the connection.
@@ -22,17 +55,22 @@ def shopify_connection(credentials: dict = None) -> tuple[shopify.Session | None
         # Extract credentials from the dictionary
         access_token = credentials["access_token"] if "access_token" in credentials else None
         base_url = credentials["base_url"] if "base_url" in credentials else None
-    elif not credentials:
-        access_token = os.environ.get("ACCESS_TOKEN")
-        base_url = f"{os.environ.get("STORE_NAME")}.myshopify.com"
+        api_version = credentials.get("api_version", "2025-04")
+    else:
+        # Get credentials from config or environment
+        creds = get_store_credentials(store_id)
+        if not creds:
+            return None
+        access_token = creds["access_token"]
+        base_url = creds["base_url"]
+        api_version = creds["api_version"]
 
     if not access_token or not base_url:
         return None
 
-    API_VERSION = '2025-04'
     try:
         # Initialize the Shopify session
-        session = shopify.Session(base_url, API_VERSION, access_token)
+        session = shopify.Session(base_url, api_version, access_token)
         shopify.ShopifyResource.activate_session(session)
 
         return shopify
@@ -42,27 +80,25 @@ def shopify_connection(credentials: dict = None) -> tuple[shopify.Session | None
         return None
 
 
-def shopify_query_graph(query: str=None, operation_name: str=None, variables: dict|None = None, company_id: int = 1) -> dict:
+def shopify_query_graph(query: str=None, operation_name: str=None, variables: dict|None = None, store_id: str = None) -> dict:
     """
         Execute a GraphQL query against the Shopify API.
-        :param shopify_session: shopify: The Shopify session object.
         :param query: str: the graphql query if operation file is missing
         :param operation_name: str: The name of the GraphQL operation. Must match the name in the GraphQL file.
         :param variables: dict: The variables for the GraphQL query. Default is None.
-        :param company_id: int: The ID of the company. Default is 1.
+        :param store_id: str: The store ID from config to use for the connection.
 
         :return: dict: The response from the Shopify API.
     """
     if not query and not operation_name:
         return{"error": "Missing parameters"}
     
-    shopify_session = shopify_connection()
+    shopify_session = shopify_connection(store_id=store_id)
     
     if shopify_session is None:
         print("ERROR: Failed to establish Shopify connection")
-        print(f"DEBUG: ACCESS_TOKEN exists: {bool(os.environ.get('ACCESS_TOKEN'))}")
-        print(f"DEBUG: STORE_NAME exists: {bool(os.environ.get('STORE_NAME'))}")
-        return {"error": "Failed to establish Shopify connection. Check ACCESS_TOKEN and STORE_NAME environment variables."}
+        print(f"DEBUG: store_id: {store_id}")
+        return {"error": "Failed to establish Shopify connection. Check store configuration."}
     
     if query is None and operation_name:
         gql_query_path = Path(f"{operation_name}.graphql")
@@ -129,7 +165,7 @@ def check_product_exists(shopify_session: ShopifyConnection, channel_reference: 
     exists = True
     return exists, time_elapsed
 
-def get_product_variants_by_sku(sku_list: list ) -> list[dict]:
+def get_product_variants_by_sku(sku_list: list, store_id: str = None) -> list[dict]:
     gql_query="""#gql
         query GetProductVariantBySku($query: String!, $after: String) {
             productVariants(first: 250, query: $query, after: $after) {
@@ -171,7 +207,8 @@ def get_product_variants_by_sku(sku_list: list ) -> list[dict]:
         result = shopify_query_graph(
                 query=gql_query,
                 operation_name="GetProductVariantBySku",
-                variables=gql_variables
+                variables=gql_variables,
+                store_id=store_id
         )
         
         if "error" in result:
@@ -208,12 +245,13 @@ def detect_identifier_type(identifiers: list) -> str:
     str_identifiers = [str(identifier) for identifier in identifiers]
     return "barcode" if all(identifier.isdigit() for identifier in str_identifiers) else "sku"
 
-def get_product_variants_by_identifier(identifier_list: list, identifier_type: str = "auto") -> list[dict]:
+def get_product_variants_by_identifier(identifier_list: list, identifier_type: str = "auto", store_id: str = None) -> list[dict]:
     """
     Get product variants by SKU or barcode with automatic detection or explicit type.
     
     :param identifier_list: List of SKUs or barcodes to search for
     :param identifier_type: Type of identifier - "sku", "barcode", or "auto" for automatic detection
+    :param store_id: The store ID from config
     :return: List of product variant nodes
     """
     if not identifier_list:
@@ -228,13 +266,13 @@ def get_product_variants_by_identifier(identifier_list: list, identifier_type: s
     
     # Use the appropriate function based on identifier type
     if identifier_type == "barcode":
-        return get_product_variants_by_barcode(identifier_list)
+        return get_product_variants_by_barcode(identifier_list, store_id=store_id)
     elif identifier_type == "sku":
-        return get_product_variants_by_sku(identifier_list)
+        return get_product_variants_by_sku(identifier_list, store_id=store_id)
     else:
         raise ValueError(f"Invalid identifier_type: {identifier_type}. Must be 'sku', 'barcode', or 'auto'")
 
-def get_product_variants_by_barcode(barcode_list: list ) -> list[dict]:
+def get_product_variants_by_barcode(barcode_list: list, store_id: str = None) -> list[dict]:
     gql_query="""#gql
         query GetProductVariantByBarcode($query: String!, $after: String) {
             productVariants(first: 250, query: $query, after: $after) {
@@ -276,7 +314,8 @@ def get_product_variants_by_barcode(barcode_list: list ) -> list[dict]:
         result = shopify_query_graph(
                 query=gql_query,
                 operation_name="GetProductVariantByBarcode",
-                variables=gql_variables
+                variables=gql_variables,
+                store_id=store_id
         )
         
         if "error" in result:
@@ -300,7 +339,7 @@ def get_product_variants_by_barcode(barcode_list: list ) -> list[dict]:
     
     return all_variants
 
-def set_activate_quantity_on_location(inventoryItemId: str, locationId: str):
+def set_activate_quantity_on_location(inventoryItemId: str, locationId: str, store_id: str = None):
     gql_query = """#gql
         mutation ActivateInventoryItem($inventoryItemId: ID!, $locationId: ID!, $available: Int) {
             inventoryActivate(inventoryItemId: $inventoryItemId, locationId: $locationId, available: $available) {
@@ -330,12 +369,13 @@ def set_activate_quantity_on_location(inventoryItemId: str, locationId: str):
     result = shopify_query_graph(
             query=gql_query,
             operation_name="ActivateInventoryItem",
-            variables=gql_variables
+            variables=gql_variables,
+            store_id=store_id
     )
     
     return result
 
-def adjust_quantity_to_variant(inventories: list[dict]):
+def adjust_quantity_to_variant(inventories: list[dict], store_id: str = None):
     """
         inventories: [{
             "delta": 2, # quantità
@@ -415,7 +455,8 @@ def adjust_quantity_to_variant(inventories: list[dict]):
         result = shopify_query_graph(
                 query=gql_query,
                 operation_name="inventoryAdjustQuantities",
-                variables=gql_variables
+                variables=gql_variables,
+                store_id=store_id
         )
         
         # Check for errors in this batch
@@ -463,13 +504,14 @@ def adjust_quantity_to_variant(inventories: list[dict]):
 
 
 
-def add_to_sale_channels(resource_id: object, channels: list[dict]) -> dict | None:
+def add_to_sale_channels(resource_id: object, channels: list[dict], store_id: str = None) -> dict | None:
     """
     Adds products to sale channels in Shopify.
 
     :param shopify: The Shopify session object.
     :param resource_id: The ID of the resource to be added to the sale channel.
     :param channels: List of dictionaries containing product IDs and sale channel IDs.
+    :param store_id: The store ID from config
 
     :return: Response from the Shopify API or None if an error occurs.
 
@@ -507,7 +549,8 @@ def add_to_sale_channels(resource_id: object, channels: list[dict]) -> dict | No
     res = shopify_query_graph(
         query=gql_query,
         operation_name="SetObjectToSaleChannel",
-        variables={"resource_id": resource_id, "channels": channels}
+        variables={"resource_id": resource_id, "channels": channels},
+        store_id=store_id
     )
 
     return res
