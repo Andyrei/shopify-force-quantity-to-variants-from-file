@@ -342,6 +342,8 @@ def adjust_quantity_to_variant(inventories: list[dict]):
             "inventoryItemId": "gid://shopify/InventoryItem/56119140876579",
             "locationId": "gid://shopify/Location/105539928355"
         }]
+        
+        Shopify limits to 250 inventory changes per mutation, so we batch them.
     """
     gql_query="""#gql
         mutation inventoryAdjustQuantities($input: InventoryAdjustQuantitiesInput!) {
@@ -389,21 +391,75 @@ def adjust_quantity_to_variant(inventories: list[dict]):
         }
     """
     
-    gql_variables = {
-        "input": {
-            "reason": "other",
-            "name": "available",
-            "changes": inventories
+    # Batch inventories into chunks of 250 (Shopify's limit)
+    BATCH_SIZE = 250
+    all_results = []
+    total_batches = (len(inventories) + BATCH_SIZE - 1) // BATCH_SIZE
+    
+    print(f"DEBUG: Adjusting {len(inventories)} inventories in {total_batches} batch(es)")
+    
+    for i in range(0, len(inventories), BATCH_SIZE):
+        batch = inventories[i:i + BATCH_SIZE]
+        batch_num = (i // BATCH_SIZE) + 1
+        
+        print(f"DEBUG: Processing batch {batch_num}/{total_batches} with {len(batch)} items")
+        
+        gql_variables = {
+            "input": {
+                "reason": "other",
+                "name": "available",
+                "changes": batch
+            }
         }
-    }
+        
+        result = shopify_query_graph(
+                query=gql_query,
+                operation_name="inventoryAdjustQuantities",
+                variables=gql_variables
+        )
+        
+        # Check for errors in this batch
+        if result and "errors" in result:
+            print(f"ERROR in batch {batch_num}: {result['errors']}")
+            return {"error": f"Failed at batch {batch_num}/{total_batches}", "details": result}
+        
+        if result and "inventoryAdjustQuantities" in result and result["inventoryAdjustQuantities"].get("userErrors"):
+            print(f"USER ERRORS in batch {batch_num}: {result['inventoryAdjustQuantities']['userErrors']}")
+            return {"error": f"User errors in batch {batch_num}/{total_batches}", "details": result}
+        
+        all_results.append(result)
     
-    result = shopify_query_graph(
-            query=gql_query,
-            operation_name="inventoryAdjustQuantities",
-            variables=gql_variables
-    )
+    # Return the combined results (or just the last one for simplicity)
+    # You could merge all changes if needed
+    print(f"DEBUG: Successfully processed all {total_batches} batch(es)")
     
-    return result
+    # Merge all results into one response
+    if all_results:
+        merged_result = {
+            "inventoryAdjustQuantities": {
+                "inventoryAdjustmentGroup": {
+                    "changes": []
+                }
+            }
+        }
+        
+        for result in all_results:
+            if result and "inventoryAdjustQuantities" in result:
+                changes = result["inventoryAdjustQuantities"].get("inventoryAdjustmentGroup", {}).get("changes", [])
+                merged_result["inventoryAdjustQuantities"]["inventoryAdjustmentGroup"]["changes"].extend(changes)
+        
+        # Copy metadata from the last result
+        if all_results[-1] and "inventoryAdjustQuantities" in all_results[-1]:
+            last_group = all_results[-1]["inventoryAdjustQuantities"]["inventoryAdjustmentGroup"]
+            merged_result["inventoryAdjustQuantities"]["inventoryAdjustmentGroup"].update({
+                "createdAt": last_group.get("createdAt"),
+                "reason": last_group.get("reason"),
+                "referenceDocumentUri": last_group.get("referenceDocumentUri")
+            })
+        
+        return merged_result
+    
+    return None
 
 
 

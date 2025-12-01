@@ -8,3 +8,4 @@ resources
 __pycache__/
 *.pyo
 *.pyd
+config_stores.toml

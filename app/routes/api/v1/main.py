@@ -1,10 +1,63 @@
 from datetime import datetime
 import os
-from fastapi import APIRouter, File, Path, Request, UploadFile, HTTPException, Form
+import toml
+from fastapi import APIRouter, File, Path, Request, UploadFile, HTTPException, Form, Cookie
 from fastapi.responses import JSONResponse
 import pandas as pd
 
 from app.routes.api.v1.add_locations.main import get_product_variants_and_sync
+
+# Load config once at module level
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
+config = toml.load(os.path.join(PROJECT_ROOT, "config_stores.toml"))
+
+def get_current_store_name(request: Request = None):
+    """Get current store name from cookie, header, or environment variable"""
+    store_id = None
+    
+    # Try to get from custom header (sent by JavaScript)
+    if request:
+        store_id = request.headers.get("X-Selected-Store")
+    
+    # Fallback to environment variable
+    if not store_id:
+        env_store = os.getenv("STORE_NAME")
+        if env_store:
+            return env_store.split("-")[1] if "-" in env_store else env_store
+    
+    # Get store name from config using store_id
+    if store_id:
+        stores = config.get("stores", {})
+        if store_id in stores:
+            store_name = stores[store_id].get("STORE_NAME", "")
+            return store_name.split("-")[1] if "-" in store_name else store_name
+    
+    return None
+
+def get_store_config(request: Request = None):
+    """Get the full store configuration"""
+    store_id = None
+    
+    # Try to get from custom header
+    if request:
+        store_id = request.headers.get("X-Selected-Store")
+    
+    # Fallback to environment variable
+    if not store_id:
+        env_store = os.getenv("STORE_NAME")
+        if env_store:
+            # Find store_id by STORE_NAME
+            stores = config.get("stores", {})
+            for sid, sconfig in stores.items():
+                if sconfig.get("STORE_NAME") == env_store:
+                    return sconfig
+    
+    # Get store config using store_id
+    if store_id:
+        stores = config.get("stores", {})
+        return stores.get(store_id)
+    
+    return None
 
 router = APIRouter(
     prefix="/v1",
@@ -30,9 +83,11 @@ def health_check(request: Request):
     }
 
 @router.get("/resources")
-async def list_resources():
-    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-    resources_dir = os.path.join(PROJECT_ROOT, "resources")
+async def list_resources(request: Request):
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
     try:
         files = os.listdir(resources_dir)
         files = [f for f in files if not f.startswith('.')]
@@ -43,10 +98,13 @@ async def list_resources():
 
 @router.delete("/resources/{filename}")
 async def delete_resource(
+    request: Request,
     filename: str = Path(..., description="The name of the file to delete")
 ):
-    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-    resources_dir = os.path.join(PROJECT_ROOT, "resources")
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
     file_path = os.path.join(resources_dir, filename)
 
     if not os.path.isfile(file_path):
@@ -61,11 +119,14 @@ async def delete_resource(
 
 @router.get("/check/{filename}")
 async def check_file_structure(
+    request: Request,
     filename: str = Path(..., description="The name of the file to check")
 ):
     """Check if the file has required columns and return missing fields"""
-    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-    resources_dir = os.path.join(PROJECT_ROOT, "resources")
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
     file_path = os.path.join(resources_dir, filename)
 
     if not os.path.isfile(file_path):
@@ -107,13 +168,16 @@ async def check_file_structure(
 
 @router.post("/update-file/{filename}")
 async def update_file_with_data(
+    request: Request,
     filename: str = Path(..., description="The name of the file to update"),
     location_id: str = Form(None, description="The location ID to add to the file"),
     sale_channel: str = Form(None, description="The sale channel to add to the file")
 ):
     """Add missing location_id and sale_channel columns to the file"""
-    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-    resources_dir = os.path.join(PROJECT_ROOT, "resources")
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
     file_path = os.path.join(resources_dir, filename)
 
     if not os.path.isfile(file_path):
@@ -157,10 +221,13 @@ async def update_file_with_data(
 
 @router.post("/sync/{filename}")
 async def sync_file(
+    request: Request,
     filename: str = Path(..., description="The name of the file to sync")
 ):
-    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-    resources_dir = os.path.join(PROJECT_ROOT, "resources")
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
     file_path = os.path.join(resources_dir, filename)
 
     if not os.path.isfile(file_path):
@@ -207,9 +274,11 @@ async def sync_file(
     
 
 @router.post("/uploadFile")
-async def upload_file(file: UploadFile = File(...)):
-    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-    resources_dir = os.path.join(PROJECT_ROOT, "resources")
+async def upload_file(request: Request, file: UploadFile = File(...)):
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
     
     if file and file.filename:
         # Ensure resources directory exists at project root

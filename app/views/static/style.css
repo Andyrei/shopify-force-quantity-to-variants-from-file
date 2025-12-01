@@ -293,3 +293,53 @@ footer {
 .sync-table td {
     border-bottom: 1px solid #333;
 }
+
+/* Store selector boxes */
+.store-box {
+    background: #2a2e32;
+    border: 2px solid #444;
+    border-radius: 1rem;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-align: center;
+    position: relative;
+}
+
+.store-box:hover {
+    border-color: var(--color-primary);
+    background: #2f3439;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(var(--color-primary-rgb), 0.2);
+}
+
+.store-box.active {
+    border-color: var(--color-primary);
+    background: rgba(var(--color-primary-rgb), 0.1);
+    box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.2);
+}
+
+.store-box h3 {
+    color: var(--color-text-primary);
+    margin-bottom: 0.5rem;
+    font-size: 1.8rem;
+}
+
+.store-box p {
+    color: var(--color-text-secondary);
+    margin: 0;
+    position: relative;
+}
+
+.active-badge {
+    display: block;
+    padding: 0.5rem 1rem;
+    background: var(--color-primary);
+    color: white;
+    border-radius: 0.5rem;
+    font-size: 1.2rem;
+    font-weight: 600;
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+}

@@ -3,6 +3,40 @@
 {% block title %}Home{% endblock %}
 
 {% block content %}
+<div class="card">
+    <h2>Select Store</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1em; margin-top: 1em;">
+        {% for store_id, store_config in stores.items() %}
+        <div class="store-box" 
+             data-store="{{ store_config.STORE_NAME }}"
+             data-store-id="{{ store_id }}">
+            <h3>{{ store_config.TITLE }}</h3>
+            <p style="font-size: 0.9em; color: #888;">{{ store_config.STORE_NAME }}</p>
+            <span class="active-badge" style="display: none;">Active</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+    // Highlight the selected store from localStorage
+    document.addEventListener("DOMContentLoaded", function() {
+        const selectedStore = localStorage.getItem('selectedStore');
+        if (selectedStore) {
+            const storeBoxes = document.querySelectorAll('.store-box');
+            storeBoxes.forEach(box => {
+                if (box.dataset.storeId === selectedStore) {
+                    box.classList.add('active');
+                    const badge = box.querySelector('.active-badge');
+                    if (badge) {
+                        badge.style.display = 'inline-block';
+                    }
+                }
+            });
+        }
+    });
+</script>
+
 <div class="card" id="sync-config" style="display: none;">
     <h2>Missing Required Data</h2>
     <p style="color: #bdbdbd; font-size: 1.2rem; margin-bottom: 1em;">
@@ -25,14 +59,14 @@
     </div>
 </div>
 
-<div class="card">
+<div class="card" id="files-section" style="{% if not current_store %}display: none;{% endif %}">
     <h2>Uploaded Files</h2>
     <ul id="resources-list">
         <li>Loading...</li>
     </ul>
 </div>
 
-<div class="card">
+<div class="card" id="upload-section" style="{% if not current_store %}display: none;{% endif %}">
     <h2> UploadFile </h2>
     <form method="POST" action="api/v1/uploadFile" enctype="multipart/form-data" id="UploadFile" style="margin-bottom: 1em;">
         <input type="file" id="file" name="file" accept=".csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
@@ -40,5 +74,10 @@
     </form>
     <pre class="box" style="max-width:100%">Here should be data returned from API response</pre>
 </div>
+
+<script>
+    // Pass store selection state to JavaScript
+    window.storeSelected = {{ 'true' if current_store else 'false' }};
+</script>
 
 {% endblock %}

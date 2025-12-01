@@ -1,4 +1,6 @@
+import os
 import uvicorn
+import toml
 from fastapi import FastAPI, Request
 from fastapi.params import Depends
 from fastapi.responses import HTMLResponse
@@ -27,8 +29,30 @@ app.include_router(
 
 @app.get("/", response_class=HTMLResponse)
 def read_root(req: Request) -> HTMLResponse:
+    # Load stores from config
+    config = toml.load("config_stores.toml")
+    stores = config.get("stores", {})
+    
+    # Try to get selected store from header (from localStorage)
+    selected_store_id = req.headers.get("X-Selected-Store")
+    current_store_name = ""
+    current_store_display = ""
+    
+    if selected_store_id and selected_store_id in stores:
+        current_store_name = stores[selected_store_id].get("STORE_NAME", "")
+        current_store_display = current_store_name.split("-")[1].upper() if "-" in current_store_name else current_store_name.upper()
+    else:
+        # Fallback to environment variable
+        env_store = os.getenv("STORE_NAME", "")
+        if env_store:
+            current_store_name = env_store
+            current_store_display = env_store.split("-")[1].upper() if "-" in env_store else env_store.upper()
+    
     return templates.TemplateResponse("index.html", {
         "request": req,
+        "store_name": current_store_display,
+        "stores": stores,
+        "current_store": current_store_name,
     })
 
 

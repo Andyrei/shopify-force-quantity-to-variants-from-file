@@ -4,6 +4,47 @@ document.addEventListener("DOMContentLoaded", function() {
     const list = document.getElementById("resources-list");
     const syncConfig = document.getElementById("sync-config");
     
+    // Get selected store from localStorage
+    const selectedStore = localStorage.getItem('selectedStore');
+    
+    // Override fetch to add store header
+    const originalFetch = window.fetch;
+    window.fetch = function(...args) {
+        const [url, options = {}] = args;
+        if (selectedStore) {
+            options.headers = {
+                ...options.headers,
+                'X-Selected-Store': selectedStore
+            };
+        }
+        return originalFetch(url, options);
+    };
+    
+    // Update storeSelected based on localStorage
+    if (selectedStore) {
+        window.storeSelected = true;
+        // Show the file sections
+        document.getElementById('files-section').style.display = 'block';
+        document.getElementById('upload-section').style.display = 'block';
+    }
+    
+    // Store selector functionality
+    const storeBoxes = document.querySelectorAll(".store-box");
+    storeBoxes.forEach(box => {
+        box.addEventListener("click", function() {
+            const storeName = this.dataset.store;
+            const storeId = this.dataset.storeId;
+            const storeTitle = this.querySelector('h3').textContent;
+            
+            // Save selected store to localStorage
+            localStorage.setItem('selectedStore', storeId);
+            localStorage.setItem('selectedStoreName', storeName);
+            
+            // Reload the page to apply the store selection
+            window.location.reload();
+        });
+    });
+    
     // These will be updated when the HTML is reset
     let locationField = document.getElementById("location-field");
     let saleChannelField = document.getElementById("sale-channel-field");
@@ -251,6 +292,22 @@ document.addEventListener("DOMContentLoaded", function() {
     // Sync file
     async function syncFile(filename) {
         try {
+            // Show loading spinner
+            responseBox.innerHTML = `
+                <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 40px;">
+                    <div class="loader"></div>
+                    <p style="margin-top: 20px; color: var(--color-primary);">Syncing "${filename}"...</p>
+                    <p style="color: #bdbdbd; font-size: 0.9rem;">This may take a few moments</p>
+                </div>
+            `;
+            
+            // Disable sync button if it exists
+            const syncBtn = document.getElementById("direct-sync");
+            if (syncBtn) {
+                syncBtn.disabled = true;
+                syncBtn.textContent = "Syncing...";
+            }
+            
             const res = await fetch(`/api/v1/sync/${filename}`, { method: "POST" });
             const data = await res.json();
             
@@ -262,11 +319,32 @@ document.addEventListener("DOMContentLoaded", function() {
                 loadFiles();
             } else {
                 responseBox.textContent = "Sync error: " + (data.detail || "Unknown error");
+                // Re-enable button on error
+                const syncBtn = document.getElementById("direct-sync");
+                if (syncBtn) {
+                    syncBtn.disabled = false;
+                    syncBtn.textContent = `Sync "${filename}"`;
+                }
             }
         } catch (err) {
             responseBox.textContent = "Sync error: " + err;
+            // Re-enable button on error
+            const syncBtn = document.getElementById("direct-sync");
+            if (syncBtn) {
+                syncBtn.disabled = false;
+                syncBtn.textContent = `Sync "${filename}"`;
+            }
         }
     }
+
+    function loadingSpinner(show) {
+        return `
+            <div class="spinner" style="display: flex; justify-content: center; align-items: center; height: 100px;">
+                <div class="loader"></div>
+            </div>
+        `;
+    }
+
 
     function buildMissingSyncList(data) {
         if (data && Array.isArray(data.missing_rows) && data.missing_rows.length > 0) {
@@ -421,6 +499,11 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // Fetch and display files
     async function loadFiles() {
+        // Don't load files if no store is selected
+        if (!window.storeSelected) {
+            return;
+        }
+        
         try {
             const res = await fetch("/api/v1/resources");
             if (res.ok) {
