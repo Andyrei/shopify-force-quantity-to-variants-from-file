@@ -502,7 +502,115 @@ def adjust_quantity_to_variant(inventories: list[dict], store_id: str = None):
     
     return None
 
-
+def set_fixed_quantity_to_variant(inventories: list[dict], store_id: str = None):
+    """ 
+        Set fixed quantities to variants in Shopify.
+        PAYLOAD EXAMPLE:
+        {
+            "input": {
+                "name": "available",
+                "reason": "correction",
+                "referenceDocumentUri": "logistics://some.warehouse/take/2023-01-23T13:14:15Z",
+                "quantities": [
+                    {
+                        "inventoryItemId": "gid://shopify/InventoryItem/30322695",
+                        "locationId": "gid://shopify/Location/124656943",
+                        "quantity": 11,
+                    }
+                ]
+            }
+        }
+    """
+    gql_query="""#gql
+        mutation InventorySet($input: InventorySetQuantitiesInput!) {
+            inventorySetQuantities(input: $input) {
+                inventoryAdjustmentGroup {
+                    createdAt
+                    reason
+                    referenceDocumentUri
+                    changes {
+                        name
+                        delta
+                    }
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+    """
+    # Batch inventories into chunks of 250 (Shopify's limit)
+    BATCH_SIZE = 250
+    all_results = []
+    total_batches = (len(inventories) + BATCH_SIZE - 1) // BATCH_SIZE
+    
+    for i in range(0, len(inventories), BATCH_SIZE):
+        batch = inventories[i:i + BATCH_SIZE]
+        batch_num = (i // BATCH_SIZE) + 1
+        
+        print(f"DEBUG: Processing batch {batch_num}/{total_batches} with {len(batch)} items")
+        
+        gql_variables = {
+            "input": {
+                "name": "available",
+                "reason": "correction",
+                "ignoreCompareQuantity": True,
+                "quantities": batch
+            }
+        }
+        
+        result = shopify_query_graph(
+                query=gql_query,
+                operation_name="InventorySet",
+                variables=gql_variables,
+                store_id=store_id
+        )
+        
+        # Check for errors in this batch
+        if result and "errors" in result:
+            print(f"ERROR in batch {batch_num}: {result['errors']}")
+            return {"error": f"Failed at batch {batch_num}/{total_batches}", "details": result}
+        
+        if result and "inventorySetQuantities" in result and result["inventorySetQuantities"].get("userErrors"):
+            print(f"USER ERRORS in batch {batch_num}: {result['inventorySetQuantities']['userErrors']}")
+            return {"error": f"User errors in batch {batch_num}/{total_batches}", "details": result}
+        
+        all_results.append(result)
+    
+    # Return the combined results (or just the last one for simplicity)
+    # You could merge all changes if needed
+    print(f"DEBUG: Successfully processed all {total_batches} batch(es)")
+    
+    # Merge all results into one response
+    if all_results:
+        merged_result = {
+                "changes": [],
+                "createdAt": None,
+                "reason": None,
+                "referenceDocumentUri": None
+            }
+        
+        for result in all_results:
+            if result and "inventorySetQuantities" in result and result["inventorySetQuantities"].get("inventoryAdjustmentGroup") is not None:
+                changes = result["inventorySetQuantities"].get("inventoryAdjustmentGroup", {}).get("changes", [])
+                merged_result["changes"].extend(changes)
+            else:
+                print("DEBUG: No inventoryAdjustmentGroup found in result")
+        
+        # Copy metadata from the last result
+        if all_results[-1] and "inventorySetQuantities" in all_results[-1]:
+            last_group = all_results[-1]["inventorySetQuantities"]["inventoryAdjustmentGroup"]
+            merged_result.update({
+                "createdAt": last_group.get("createdAt"),
+                "reason": last_group.get("reason"),
+                "referenceDocumentUri": last_group.get("referenceDocumentUri")
+            })
+        
+        return merged_result
+    
+    return None
+    
 
 def add_to_sale_channels(resource_id: object, channels: list[dict], store_id: str = None) -> dict | None:
     """

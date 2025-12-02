@@ -222,7 +222,8 @@ async def update_file_with_data(
 @router.post("/sync/{filename}")
 async def sync_file(
     request: Request,
-    filename: str = Path(..., description="The name of the file to sync")
+    filename: str = Path(..., description="The name of the file to sync"),
+    sync_mode: str = Form("adjust", description="Sync mode: tabula_rasa, adjust, or replace")
 ):
     store_name = get_current_store_name(request)
     if not store_name:
@@ -254,18 +255,20 @@ async def sync_file(
         print(f"DEBUG: DataFrame columns: {df.columns.tolist()}")
         print(f"DEBUG: DataFrame shape: {df.shape}")
         print(f"DEBUG: First row: {df.iloc[0].to_dict() if len(df) > 0 else 'Empty DataFrame'}")
+        print(f"DEBUG: Sync mode: {sync_mode}")
         
-        # Pass data to the sync function with store_id
+        # Pass data to the sync function with store_id and sync_mode
         data_records = df.to_dict(orient="records")
-        print(f"DEBUG: Calling get_product_variants_and_sync with {len(data_records)} records and store_id: {store_id}")
+        print(f"DEBUG: Calling get_product_variants_and_sync with {len(data_records)} records, store_id: {store_id}, mode: {sync_mode}")
         
-        sync_result, missing_rows, duplicate_rows, found_refs = get_product_variants_and_sync(data_records, store_id=store_id)
+        sync_result, missing_rows, duplicate_rows, found_refs = get_product_variants_and_sync(data_records, store_id=store_id, sync_mode=sync_mode)
         
         print(f"DEBUG: Sync completed. Result: {type(sync_result)}, Missing: {len(missing_rows)}, Found: {len(found_refs)}")
         
         return {
             "detail": f"File '{filename}' syncing right now!" if sync_result and not missing_rows else f"Matching variants found missing in '{filename}'",
             "total_records": len(data_records),
+            "sync_mode": sync_mode,
             "data": sync_result,
             "missing_rows": missing_rows,
             "duplicate_rows": duplicate_rows,

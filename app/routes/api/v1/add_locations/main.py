@@ -3,13 +3,14 @@ from app.utilities.shopify import (
     adjust_quantity_to_variant, 
     get_product_variants_by_identifier, 
     set_activate_quantity_on_location,
-    detect_identifier_type
+    detect_identifier_type,
+    set_fixed_quantity_to_variant
 )
 
 
-def get_product_variants_and_sync(data_rows, store_id: str = None) -> list[dict, list, list, list]:
+def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: str = "adjust") -> list[dict, list, list, list]:
     
-    print(f"DEBUG: Starting sync with {len(data_rows)} rows for store: {store_id}")
+    print(f"DEBUG: Starting sync with {len(data_rows)} rows for store: {store_id}, mode: {sync_mode}")
     
     prod_reference = []
     
@@ -91,7 +92,8 @@ def get_product_variants_and_sync(data_rows, store_id: str = None) -> list[dict,
     result = None
     
     # Process each row and match with variants efficiently
-    for row in data_rows:
+    for i, row in enumerate(data_rows):
+        print(f"DEBUG: Processing row {i+1}/{len(data_rows)}")
         # Convert to string to ensure consistent data types
         if identifier_type == "barcode":
             row_ref = str(row.get("barcode"))
@@ -137,7 +139,7 @@ def get_product_variants_and_sync(data_rows, store_id: str = None) -> list[dict,
                     })
                     
             # Only execute Shopify operations if no variants are missing
-            if not missing_rows:
+            if not missing_rows and not duplicate_rows:
                 if publications:
                     add_to_sale_channels(
                         resource_id=variant["product"]["id"],
@@ -145,15 +147,64 @@ def get_product_variants_and_sync(data_rows, store_id: str = None) -> list[dict,
                         store_id=store_id
                     )
                 set_activate_quantity_on_location(inventoryItemId=inventory_item, locationId=location_id_full, store_id=store_id)
-                inventories.append({
-                    "delta": delta_quantity, # quantità
-                    "inventoryItemId": inventory_item,
-                    "locationId": location_id_full
-                })
+                
+                # Build inventory update based on sync_mode
+                if sync_mode == "adjust":
+                    # Adjust: add/subtract from existing quantity
+                    inventories.append({
+                        "delta": delta_quantity,
+                        "inventoryItemId": inventory_item,
+                        "locationId": location_id_full
+                    })
+                elif sync_mode == "replace":
+                    # Replace: set to exact quantity from file
+                    inventories.append({
+                        "quantity": delta_quantity,
+                        "inventoryItemId": inventory_item,
+                        "locationId": location_id_full
+                    })
+                elif sync_mode == "tabula_rasa":
+                    # Tabula Rasa: set to 0 (will be handled separately)
+                    inventories.append({
+                        "quantity": 0,
+                        "inventoryItemId": inventory_item,
+                        "locationId": location_id_full
+                    })
         
 
     # Only adjust quantities if no variants are missing
-    if not missing_rows and inventories:
-        result = adjust_quantity_to_variant(inventories=inventories, store_id=store_id)
-    
+    if not missing_rows and not duplicate_rows and inventories:
+        print(f"DEBUG: Updating quantities for {len(inventories)} inventory items using mode: {sync_mode}")
+        
+        if sync_mode == "adjust":
+            # Use delta-based adjustment
+            result = adjust_quantity_to_variant(inventories=inventories, store_id=store_id)
+        elif sync_mode == "replace":
+            # Set to exact quantities
+            result = set_fixed_quantity_to_variant(inventories=inventories, store_id=store_id)
+        elif sync_mode == "tabula_rasa":
+            # First set all to 0, then set to file quantities
+            result = set_fixed_quantity_to_variant(inventories=inventories, store_id=store_id)
+            # Now build new inventory with actual quantities and set them
+            new_inventories = []
+            for i, row in enumerate(data_rows):
+                if identifier_type == "barcode":
+                    row_ref = str(row.get("barcode"))
+                else:
+                    row_ref = str(row.get("sku"))
+                
+                if row_ref in variant_map:
+                    variant = variant_map[row_ref]
+                    inventory_item = variant["inventoryItem"]["id"]
+                    row_location_id = row.get("id sede") or row.get("location_id") or row.get("location")
+                    if row_location_id:
+                        location_id_full = f"gid://shopify/Location/{row_location_id}"
+                        new_inventories.append({
+                            "quantity": row["qta"],
+                            "inventoryItemId": inventory_item,
+                            "locationId": location_id_full
+                        })
+            if new_inventories:
+                result = set_fixed_quantity_to_variant(inventories=new_inventories, store_id=store_id)
+        
     return result, missing_rows, duplicate_rows, found_refs

@@ -227,14 +227,53 @@ document.addEventListener("DOMContentLoaded", function() {
     // Show sync button directly if file is ready
     function showSyncButton(filename) {
         syncConfig.innerHTML = `
-            <h2>Ready to Sync</h2>
-            <button id="direct-sync" style="background: var(--color-primary); color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer;">
+            <h2>Quantity Update Strategy</h2>
+            <p style="color: #bdbdbd; font-size: 1rem; margin-bottom: 1em;">
+                Choose how inventory quantities should be updated:
+            </p>
+            <div style="display: flex; gap: 1em; flex-wrap: wrap; margin-bottom: 1.5em;">
+                <button class="sync-mode-btn" data-mode="tabula_rasa" style="flex: 1; min-width: 200px; padding: 15px; border: 2px solid #444; background: #2a2a2a; color: white; border-radius: 8px; cursor: pointer; transition: all 0.3s;">
+                    <strong>Tabula Rasa</strong>
+                    <p style="font-size: 0.85em; margin-top: 5px; color: #bdbdbd;">Set all to 0, then apply file values</p>
+                </button>
+                
+                <button class="sync-mode-btn active" data-mode="adjust" style="flex: 1; min-width: 200px; padding: 15px; border: 2px solid var(--color-primary); background: #2a2a2a; color: white; border-radius: 8px; cursor: pointer; transition: all 0.3s;">
+                    <strong>Adjust Quantity</strong>
+                    <p style="font-size: 0.85em; margin-top: 5px; color: #bdbdbd;">Add/subtract from existing</p>
+                </button>
+                
+                <button class="sync-mode-btn" data-mode="replace" style="flex: 1; min-width: 200px; padding: 15px; border: 2px solid #444; background: #2a2a2a; color: white; border-radius: 8px; cursor: pointer; transition: all 0.3s;">
+                    <strong>Replace Quantity</strong>
+                    <p style="font-size: 0.85em; margin-top: 5px; color: #bdbdbd;">Set to exact file values</p>
+                </button>
+            </div>
+            <input type="hidden" id="selected-sync-mode" value="adjust">
+            <button id="direct-sync" style="background: var(--color-primary); color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 1rem;">
                 Sync "${filename}"
             </button>
         `;
         syncConfig.style.display = "block";
         
-        document.getElementById("direct-sync").onclick = () => syncFile(filename);
+        // Add sync mode button listeners
+        const syncModeButtons = document.querySelectorAll('.sync-mode-btn');
+        const selectedModeInput = document.getElementById('selected-sync-mode');
+        
+        syncModeButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                syncModeButtons.forEach(b => {
+                    b.classList.remove('active');
+                    b.style.borderColor = '#444';
+                });
+                this.classList.add('active');
+                this.style.borderColor = 'var(--color-primary)';
+                selectedModeInput.value = this.dataset.mode;
+            });
+        });
+        
+        document.getElementById("direct-sync").onclick = () => {
+            const mode = document.getElementById('selected-sync-mode').value;
+            syncFile(filename, mode);
+        };
     }
 
     // Save missing data to file and then sync
@@ -274,8 +313,11 @@ document.addEventListener("DOMContentLoaded", function() {
             });
             
             if (updateRes.ok) {
-                // File updated successfully, now sync
-                await syncFile(filename);
+                // File updated successfully, now show sync mode selection
+                // Re-check the file to show sync UI
+                await checkFileStructure(filename);
+                saveAndSyncBtn.textContent = "Save to File & Sync";
+                saveAndSyncBtn.disabled = false;
             } else {
                 const updateData = await updateRes.json();
                 responseBox.textContent = "Update error: " + (updateData.detail || "Unknown error");
@@ -290,13 +332,19 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     // Sync file
-    async function syncFile(filename) {
+    async function syncFile(filename, syncMode = 'adjust') {
         try {
+            const modeLabels = {
+                'adjust': 'Adjusting',
+                'replace': 'Replacing',
+                'tabula_rasa': 'Resetting & Setting'
+            };
+            
             // Show loading spinner
             responseBox.innerHTML = `
                 <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 40px;">
                     <div class="loader"></div>
-                    <p style="margin-top: 20px; color: var(--color-primary);">Syncing "${filename}"...</p>
+                    <p style="margin-top: 20px; color: var(--color-primary);">${modeLabels[syncMode]} quantities for "${filename}"...</p>
                     <p style="color: #bdbdbd; font-size: 0.9rem;">This may take a few moments</p>
                 </div>
             `;
@@ -308,7 +356,14 @@ document.addEventListener("DOMContentLoaded", function() {
                 syncBtn.textContent = "Syncing...";
             }
             
-            const res = await fetch(`/api/v1/sync/${filename}`, { method: "POST" });
+            // Send sync mode as form data
+            const formData = new FormData();
+            formData.append('sync_mode', syncMode);
+            
+            const res = await fetch(`/api/v1/sync/${filename}`, { 
+                method: "POST",
+                body: formData
+            });
             const data = await res.json();
             
             if (res.ok) {
