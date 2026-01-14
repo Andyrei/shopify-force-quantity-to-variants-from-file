@@ -1,0 +1,60 @@
+# This file specifies files that are *not* uploaded to Google Cloud
+# using gcloud. It follows the same syntax as .gitignore, with the addition of
+# "#!include" directives (which insert the entries of the given .gitignore-style
+# file at that point).
+
+.gcloudignore
+.git
+.gitignore
+
+# Python pycache:
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Other files
+nginx.conf
+Dockerfile
+docker-compose*.yml
+*.bak
+*.tmp
+*.old
+*.md
+generate_config.py
+.dockerignore
+
+# Development files
+docker-compose*.yml
+*.md
+
+# Environment files (exclude all .env files)
+.env
+.env.*
+*.env
+
+# Keep config_stores.toml - it will be included
+!config_stores.toml
+
+# Resources (uncomment if not needed in production)
+resources/*
