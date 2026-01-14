@@ -237,13 +237,25 @@ def detect_identifier_type(identifiers: list) -> str:
     Detect whether a list of identifiers are SKUs or barcodes.
     
     :param identifiers: List of product identifiers
-    :return: "barcode" if all identifiers are numeric, "sku" otherwise
+    :return: "barcode" if most valid identifiers are numeric, "sku" otherwise
     """
     if not identifiers:
         return "sku"  # Default to SKU if empty list
     
-    str_identifiers = [str(identifier) for identifier in identifiers]
-    return "barcode" if all(identifier.isdigit() for identifier in str_identifiers) else "sku"
+    # Filter out empty/invalid identifiers for detection
+    valid_identifiers = [str(i) for i in identifiers if i and str(i) not in ["EMPTY_SKU", "nan", "None"]]
+    
+    if not valid_identifiers:
+        return "sku"  # No valid identifiers, default to SKU
+    
+    # Count how many are purely numeric
+    numeric_count = sum(1 for identifier in valid_identifiers if identifier.isdigit())
+    
+    # If more than 80% are numeric, treat as barcodes
+    if numeric_count / len(valid_identifiers) > 0.8:
+        return "barcode"
+    else:
+        return "sku"
 
 def get_product_variants_by_identifier(identifier_list: list, identifier_type: str = "auto", store_id: str = None) -> list[dict]:
     """

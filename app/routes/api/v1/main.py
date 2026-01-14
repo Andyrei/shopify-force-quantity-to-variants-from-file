@@ -1,8 +1,10 @@
 from datetime import datetime
 import os
 import toml
+import json
+import asyncio
 from fastapi import APIRouter, File, Path, Request, UploadFile, HTTPException, Form, Cookie
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import pandas as pd
 
 from app.routes.api.v1.add_locations.main import get_product_variants_and_sync
@@ -186,11 +188,20 @@ async def check_file_structure(
         data_records = df.to_dict(orient="records")
         for row in data_records:
             # Use 'barcode' if it exists, otherwise use 'sku'
-            # Convert to string to ensure consistent data types
+            # Convert to string and handle NaN/None values properly
             if "barcode" in row:
-                prod_reference.append(str(row["barcode"]))
+                val = row["barcode"]
             else:
-                prod_reference.append(str(row["sku"]))
+                val = row["sku"]
+            
+            # Convert to string and handle NaN, None, and float values
+            if pd.isna(val) or val is None:
+                prod_reference.append("EMPTY_SKU")
+            elif isinstance(val, float):
+                # Remove decimal point for float numbers that are actually integers
+                prod_reference.append(str(int(val)) if val == int(val) else str(val))
+            else:
+                prod_reference.append(str(val))
         # Auto-detect based on content if SKU field is present
         identifier_type = detect_identifier_type(prod_reference)
         
@@ -213,21 +224,40 @@ async def check_file_structure(
         missing_rows = []
         duplicate_rows = []
         seen_refs = {}
-        found_refs = set(variant.get(identifier_type) for variant in product_variants if variant.get(identifier_type))
+        found_refs = set()
+        
+        # Build found_refs set with proper string conversion
+        for variant in product_variants:
+            val = variant.get(identifier_type)
+            if val:
+                if pd.isna(val) or val is None:
+                    continue
+                elif isinstance(val, float):
+                    found_refs.add(str(int(val)) if val == int(val) else str(val))
+                else:
+                    found_refs.add(str(val))
         
         for i, row in enumerate(data_records):
             if identifier_type == "barcode":
-                row_ref = str(row.get("barcode"))
+                val = row.get("barcode")
             else:
-                row_ref = str(row.get("sku"))
+                val = row.get("sku")
+            
+            # Convert to string with proper handling
+            if pd.isna(val) or val is None:
+                row_ref = "EMPTY_SKU"
+            elif isinstance(val, float):
+                row_ref = str(int(val)) if val == int(val) else str(val)
+            else:
+                row_ref = str(val)
             
             if row_ref not in found_refs and row_ref not in missing_rows:
-                # This SKU doesn't exist in Shopify
-                missing_rows.append(row["sku"] if "sku" in row else row["barcode"])
+                # This SKU doesn't exist in Shopify - add to missing list only once
+                missing_rows.append(row_ref)
                 
             if row_ref in seen_refs and row_ref not in duplicate_rows:
                 # This SKU was already processed - it's a duplicate in the file
-                duplicate_rows.append(row["sku"] if "sku" in row else row["barcode"])
+                duplicate_rows.append(row_ref)
             
             if row_ref not in seen_refs:
                 # First occurrence of this SKU
@@ -238,6 +268,7 @@ async def check_file_structure(
         return {
             "filename": filename,
             "columns": df.columns.tolist(),
+            "total_skus": len(data_records),
             "has_location": has_location_in_file,
             "has_sale_channel": has_sale_channel_in_file,
             "missing_rows": missing_rows,
@@ -324,46 +355,109 @@ async def sync_file(
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="File not found")
 
-    try:
-        # Use pandas to read the file based on extension
-        if filename.lower().endswith('.csv'):
-            df = pd.read_csv(file_path)
-        elif filename.lower().endswith(('.xls', '.xlsx')):
-            df = pd.read_excel(file_path)
-        else:
-            raise HTTPException(status_code=400, detail="Unsupported file type")
-        
-        # Transform all column headers to lowercase
-        df.columns = df.columns.str.lower()
-        
-        print(f"DEBUG: DataFrame columns: {df.columns.tolist()}")
-        print(f"DEBUG: DataFrame shape: {df.shape}")
-        print(f"DEBUG: First row: {df.iloc[0].to_dict() if len(df) > 0 else 'Empty DataFrame'}")
-        print(f"DEBUG: Sync mode: {sync_mode}")
-        
-        # Pass data to the sync function with store_id and sync_mode
-        data_records = df.to_dict(orient="records")
-        print(f"DEBUG: Calling get_product_variants_and_sync with {len(data_records)} records, store_id: {store_id}, mode: {sync_mode}")
-        
-        sync_result, missing_rows, duplicate_rows, found_refs = get_product_variants_and_sync(data_records, store_id=store_id, sync_mode=sync_mode)
-        
-        print(f"DEBUG: Sync completed. Result: {type(sync_result)}, Missing: {len(missing_rows)}, Found: {len(found_refs)}")
-        
-        return {
-            "detail": f"File '{filename}' syncing right now!" if sync_result and not missing_rows else f"Matching variants found missing in '{filename}'",
-            "total_records": len(data_records),
-            "sync_mode": sync_mode,
-            "data": sync_result,
-            "missing_rows": missing_rows,
-            "duplicate_rows": duplicate_rows,
-            "found_refs": found_refs
-        }
-    except Exception as e:
-        print(f"ERROR: Exception in sync_file: {str(e)}")
-        print(f"ERROR: Exception type: {type(e)}")
-        import traceback
-        print(f"ERROR: Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Error syncing file: {e}")
+    async def event_generator():
+        try:
+            # Use pandas to read the file based on extension
+            if filename.lower().endswith('.csv'):
+                df = pd.read_csv(file_path)
+            elif filename.lower().endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(file_path)
+            else:
+                yield f"data: {json.dumps({'type': 'error', 'error': 'Unsupported file type'})}\n\n"
+                return
+            
+            # Transform all column headers to lowercase
+            df.columns = df.columns.str.lower()
+            
+            print(f"DEBUG: DataFrame columns: {df.columns.tolist()}")
+            print(f"DEBUG: DataFrame shape: {df.shape}")
+            print(f"DEBUG: First row: {df.iloc[0].to_dict() if len(df) > 0 else 'Empty DataFrame'}")
+            print(f"DEBUG: Sync mode: {sync_mode}")
+            
+            # Pass data to the sync function with store_id and sync_mode
+            data_records = df.to_dict(orient="records")
+            total_records = len(data_records)
+            
+            yield f"data: {json.dumps({'type': 'start', 'total': total_records, 'mode': sync_mode})}\n\n"
+            await asyncio.sleep(0.01)
+            
+            print(f"DEBUG: Calling get_product_variants_and_sync with {len(data_records)} records, store_id: {store_id}, mode: {sync_mode}")
+            
+            # Yield progress messages
+            yield f"data: {json.dumps({'type': 'status', 'message': f'📦 Loading {total_records} items from file...'})}\n\n"
+            await asyncio.sleep(0.1)
+            
+            yield f"data: {json.dumps({'type': 'status', 'message': '🔍 Searching Shopify catalog...'})}\n\n"
+            await asyncio.sleep(0.1)
+            
+            # Call sync synchronously (in a thread to avoid blocking)
+            import concurrent.futures
+            import time
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    get_product_variants_and_sync, 
+                    data_records, 
+                    store_id, 
+                    sync_mode
+                )
+                
+                # Show progress while waiting
+                start_time = time.time()
+                while not future.done():
+                    elapsed = int(time.time() - start_time)
+                    if elapsed > 0 and elapsed % 3 == 0:
+                        yield f"data: {json.dumps({'type': 'status', 'message': f'⚙️ Processing products... ({elapsed}s elapsed)'})}\n\n"
+                    await asyncio.sleep(0.5)
+                
+                # Wait for completion
+                sync_result, missing_rows, duplicate_rows, found_refs = future.result()
+            
+            print(f"DEBUG: Sync completed. Result: {type(sync_result)}, Missing: {len(missing_rows)}, Found: {len(found_refs)}")
+            
+            # Show completion progress
+            if sync_result:
+                yield f"data: {json.dumps({'type': 'status', 'message': f'✅ Matched {len(found_refs)} products in Shopify'})}\n\n"
+                await asyncio.sleep(0.1)
+                
+                mode_messages = {
+                    'adjust': '📊 Adjusting inventory quantities...',
+                    'replace': '🔄 Replacing inventory quantities...',
+                    'tabula_rasa': '🗑️ Resetting inventory to zero, then applying new quantities...'
+                }
+                yield f"data: {json.dumps({'type': 'status', 'message': mode_messages.get(sync_mode, '📝 Updating inventory...')})}\n\n"
+                await asyncio.sleep(0.1)
+                
+                yield f"data: {json.dumps({'type': 'status', 'message': '💾 Saving changes to Shopify...'})}\n\n"
+                await asyncio.sleep(0.1)
+            
+            # Send final result
+            result_data = {
+                'type': 'complete',
+                'detail': f"File '{filename}' syncing completed!" if sync_result and not missing_rows else f"Matching variants found missing in '{filename}'",
+                'total_records': total_records,
+                'sync_mode': sync_mode,
+                'data': sync_result,
+                'missing_rows': missing_rows,
+                'duplicate_rows': duplicate_rows,
+                'found_refs': list(found_refs) if found_refs else []
+            }
+            yield f"data: {json.dumps(result_data)}\n\n"
+            
+        except Exception as e:
+            print(f"ERROR: Exception in sync_file: {str(e)}")
+            print(f"ERROR: Exception type: {type(e)}")
+            import traceback
+            print(f"ERROR: Traceback: {traceback.format_exc()}")
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+async def sync_with_progress(data_rows, store_id, sync_mode, event_generator_callback=None):
+    """Wrapper around get_product_variants_and_sync that provides progress updates"""
+    # This is a temporary solution - ideally we'd refactor get_product_variants_and_sync to be async
+    # For now, we'll just call it synchronously
+    return get_product_variants_and_sync(data_rows, store_id=store_id, sync_mode=sync_mode)
     
 
 @router.post("/uploadFile")

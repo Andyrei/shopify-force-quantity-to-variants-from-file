@@ -116,7 +116,7 @@ document.addEventListener("DOMContentLoaded", function() {
                         <div style="color: var(--color-primary);">
                             ✓ File "${filename}" is ready to sync!<br>
                             Found all required columns: ${data.columns.join(", ")}<br>
-                            All ${data.columns.length} SKUs verified in Shopify.
+                            All ${data.total_skus || 0} SKUs verified in Shopify.
                         </div>
                     `;
                 } else {
@@ -159,9 +159,9 @@ document.addEventListener("DOMContentLoaded", function() {
                                 ` : ''}
                                 <details style="margin-top: 15px;">
                                     <summary style="cursor: pointer; color: var(--color-primary); font-weight: bold;">📋 View Detailed Report</summary>
-                                    <div style="margin-top: 10px; padding: 15px; background: #1a1a1a; border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                                    <div style="display: flex; gap: 1rem; margin-top: 10px; margin-bottom: 20px; padding: 15px; background: #1a1a1a; border-radius: 4px; max-height: 300px; overflow-y: auto;">
                                         ${data.missing_rows && data.missing_rows.length > 0 ? `
-                                            <div style="margin-bottom: 20px; width: 50%;">
+                                            <div style="width: 50%;">
                                                 <strong style="color: var(--color-error);">Missing SKUs (${data.missing_rows.length}):</strong>
                                                 <div style="margin-top: 8px; font-family: monospace; font-size: 1.4rem; color: #e0e0e0;">
                                                     ${data.missing_rows.map((sku, i) => `<div style="padding: 2px 0;">${i + 1}. ${sku}</div>`).join('')}
@@ -169,7 +169,7 @@ document.addEventListener("DOMContentLoaded", function() {
                                             </div>
                                         ` : ''}
                                         ${data.duplicate_rows && data.duplicate_rows.length > 0 ? `
-                                            <div>
+                                            <div style="width: 50%;">
                                                 <strong style="color: var(--color-highlight);">Duplicate SKUs (${data.duplicate_rows.length}):</strong>
                                                 <div style="margin-top: 8px; font-family: monospace; font-size: 1.4rem; color: #e0e0e0;">
                                                     ${data.duplicate_rows.map((sku, i) => `<div style="padding: 2px 0;">${i + 1}. ${sku}</div>`).join('')}
@@ -425,12 +425,12 @@ document.addEventListener("DOMContentLoaded", function() {
                 'tabula_rasa': 'Resetting & Setting'
             };
             
-            // Show loading spinner
+            // Show initial loading message
             responseBox.innerHTML = `
                 <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 40px;">
                     <div class="loader"></div>
-                    <p style="margin-top: 20px; color: var(--color-primary);">${modeLabels[syncMode]} quantities for "${filename}"...</p>
-                    <p style="color: #bdbdbd; font-size: 0.9rem;">This may take a few moments</p>
+                    <p id="progress-message" style="margin-top: 20px; color: var(--color-primary);">${modeLabels[syncMode]} quantities for "${filename}"...</p>
+                    <p style="color: #bdbdbd; font-size: 0.9rem;">Preparing sync...</p>
                 </div>
             `;
             
@@ -441,32 +441,213 @@ document.addEventListener("DOMContentLoaded", function() {
                 inlineSyncBtn.textContent = 'Syncing...';
             }
             
-            // Send sync mode as form data
+            // Get selected store from localStorage
+            const selectedStore = localStorage.getItem('selectedStore');
+            
+            // Create FormData for the POST request
             const formData = new FormData();
             formData.append('sync_mode', syncMode);
             
-            const res = await fetch(`/api/v1/sync/${filename}`, { 
-                method: "POST",
+            // We can't use EventSource with POST, so we'll use fetch with streaming
+            const response = await fetch(`/api/v1/sync/${filename}`, {
+                method: 'POST',
+                headers: selectedStore ? {
+                    'X-Selected-Store': selectedStore
+                } : {},
                 body: formData
             });
-            const data = await res.json();
             
-            if (res.ok) {
-                responseBox.innerHTML = buildSyncTable(data);
-                // Hide the sync config and reset state
-                resetSyncConfig();
-                selectedFile = null;
-                loadFiles();
-            } else {
-                responseBox.textContent = "Sync error: " + (data.detail || "Unknown error");
-                // Re-enable inline sync button on error
-                const inlineSyncBtn = list.querySelector(`button.sync-btn[data-filename="${encodeURIComponent(filename)}"]`);
-                if (inlineSyncBtn) {
-                    inlineSyncBtn.disabled = false;
-                    inlineSyncBtn.textContent = '▶ Sync';
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            
+            console.log('🚀 Starting SSE stream reading...');
+            
+            while (true) {
+                const {done, value} = await reader.read();
+                
+                if (done) {
+                    console.log('✅ SSE stream completed');
+                    break;
+                }
+                
+                buffer += decoder.decode(value, {stream: true});
+                const lines = buffer.split('\n');
+                
+                // Keep the last incomplete line in the buffer
+                buffer = lines.pop() || '';
+                
+                for (const line of lines) {
+                    if (line.trim() === '') continue; // Skip empty lines
+                    
+                    console.log('📥 Raw line:', line);
+                    
+                    if (line.startsWith('data: ')) {
+                        const jsonStr = line.substring(6);
+                        console.log('📦 JSON string:', jsonStr);
+                        try {
+                            const data = JSON.parse(jsonStr);
+                            console.log('✨ Parsed data:', data);
+                            
+                            if (data.type === 'start') {
+                                responseBox.innerHTML = `
+                                    <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 40px;">
+                                        <div class="loader"></div>
+                                        <p id="sync-title" style="margin-top: 20px; color: var(--color-primary); font-size: 1.2rem; font-weight: bold;">${modeLabels[syncMode]} quantities for "${filename}"...</p>
+                                        
+                                        <!-- Progress Bar -->
+                                        <div class="progress-bar-container" style="width: 80%; margin: 20px 0;">
+                                            <div id="progress-bar" class="progress-bar" style="width: 10%;"></div>
+                                        </div>
+                                        
+                                        <p id="progress-count" style="color: #bdbdbd; font-size: 1.1rem; margin-top: 10px;">Starting sync with ${data.total} items...</p>
+                                        
+                                        <!-- Progress Steps -->
+                                        <div id="progress-steps" style="margin-top: 20px; width: 80%; max-width: 600px;">
+                                            <div id="step-loading" class="progress-step" data-step="loading">
+                                                <span class="progress-step-icon">📦</span>
+                                                <span class="progress-step-text">Loading items from file</span>
+                                                <span class="progress-step-time"></span>
+                                            </div>
+                                            <div id="step-searching" class="progress-step" data-step="searching">
+                                                <span class="progress-step-icon">🔍</span>
+                                                <span class="progress-step-text">Searching Shopify catalog</span>
+                                                <span class="progress-step-time"></span>
+                                            </div>
+                                            <div id="step-processing" class="progress-step" data-step="processing">
+                                                <span class="progress-step-icon">⚙️</span>
+                                                <span class="progress-step-text">Processing products</span>
+                                                <span class="progress-step-time"></span>
+                                            </div>
+                                            <div id="step-updating" class="progress-step" data-step="updating">
+                                                <span class="progress-step-icon">📊</span>
+                                                <span class="progress-step-text">Updating inventory</span>
+                                                <span class="progress-step-time"></span>
+                                            </div>
+                                            <div id="step-saving" class="progress-step" data-step="saving">
+                                                <span class="progress-step-icon">💾</span>
+                                                <span class="progress-step-text">Saving changes</span>
+                                                <span class="progress-step-time"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            } else if (data.type === 'status') {
+                                const progressCount = document.getElementById('progress-count');
+                                const progressBar = document.getElementById('progress-bar');
+                                
+                                console.log('Status update:', data.message);
+                                console.log('Progress bar element:', progressBar);
+                                
+                                if (progressCount) {
+                                    progressCount.innerHTML = `<span style="font-size: 1.3rem;">${data.message}</span>`;
+                                }
+                                
+                                // Update progress bar and steps based on message
+                                const message = data.message.toLowerCase();
+                                let currentStep = null;
+                                let progress = 0;
+                                
+                                if (message.includes('loading')) {
+                                    currentStep = 'loading';
+                                    progress = 20;
+                                } else if (message.includes('searching') || message.includes('catalog')) {
+                                    document.getElementById('step-loading')?.classList.add('completed');
+                                    currentStep = 'searching';
+                                    progress = 35;
+                                } else if (message.includes('processing') || message.includes('elapsed')) {
+                                    document.getElementById('step-loading')?.classList.add('completed');
+                                    document.getElementById('step-searching')?.classList.add('completed');
+                                    currentStep = 'processing';
+                                    progress = 50;
+                                } else if (message.includes('matched') || message.includes('products in shopify')) {
+                                    document.getElementById('step-loading')?.classList.add('completed');
+                                    document.getElementById('step-searching')?.classList.add('completed');
+                                    document.getElementById('step-processing')?.classList.add('completed');
+                                    progress = 65;
+                                } else if (message.includes('adjusting') || message.includes('replacing') || message.includes('resetting') || message.includes('inventory')) {
+                                    document.getElementById('step-loading')?.classList.add('completed');
+                                    document.getElementById('step-searching')?.classList.add('completed');
+                                    document.getElementById('step-processing')?.classList.add('completed');
+                                    currentStep = 'updating';
+                                    progress = 80;
+                                } else if (message.includes('saving')) {
+                                    document.getElementById('step-loading')?.classList.add('completed');
+                                    document.getElementById('step-searching')?.classList.add('completed');
+                                    document.getElementById('step-processing')?.classList.add('completed');
+                                    document.getElementById('step-updating')?.classList.add('completed');
+                                    currentStep = 'saving';
+                                    progress = 95;
+                                }
+                                
+                                console.log('Progress:', progress + '%', 'Current step:', currentStep);
+                                
+                                // Update active step
+                                if (currentStep) {
+                                    document.querySelectorAll('.progress-step').forEach(step => {
+                                        step.classList.remove('active');
+                                    });
+                                    const stepEl = document.getElementById(`step-${currentStep}`);
+                                    if (stepEl) {
+                                        stepEl.classList.add('active');
+                                        const timeEl = stepEl.querySelector('.progress-step-time');
+                                        if (timeEl) {
+                                            timeEl.textContent = new Date().toLocaleTimeString();
+                                        }
+                                    }
+                                }
+                                
+                                // Animate progress bar
+                                if (progressBar && progress > 0) {
+                                    console.log('Setting progress bar width to:', progress + '%');
+                                    progressBar.style.width = progress + '%';
+                                }
+                            } else if (data.type === 'progress') {
+                                const progressCount = document.getElementById('progress-count');
+                                if (progressCount) {
+                                    progressCount.innerHTML = `<span style="font-size: 1.3rem;">Processing item ${data.current}/${data.total}...</span>`;
+                                }
+                            } else if (data.type === 'complete') {
+                                // Mark all steps as completed
+                                document.querySelectorAll('.progress-step').forEach(step => {
+                                    step.classList.add('completed');
+                                    step.classList.remove('active');
+                                });
+                                // Set progress bar to 100%
+                                const progressBar = document.getElementById('progress-bar');
+                                if (progressBar) {
+                                    progressBar.style.width = '100%';
+                                }
+                                // Wait a moment to show completion, then show results
+                                setTimeout(() => {
+                                    responseBox.innerHTML = buildSyncTable(data);
+                                    // Hide the sync config and reset state
+                                    resetSyncConfig();
+                                    selectedFile = null;
+                                    loadFiles();
+                                }, 800);
+                            } else if (data.type === 'error') {
+                                responseBox.textContent = "Sync error: " + data.error;
+                                // Re-enable inline sync button on error
+                                if (inlineSyncBtn) {
+                                    inlineSyncBtn.disabled = false;
+                                    inlineSyncBtn.textContent = '▶ Sync';
+                                }
+                            }
+                        } catch (e) {
+                            console.error('❌ Error parsing SSE JSON:', e);
+                            console.error('❌ Failed JSON string:', jsonStr);
+                        }
+                    }
                 }
             }
+            
         } catch (err) {
+            console.error('❌ Sync error:', err);
             responseBox.textContent = "Sync error: " + err;
             // Re-enable inline sync button on error
             const inlineSyncBtn = list.querySelector(`button.sync-btn[data-filename="${encodeURIComponent(filename)}"]`);

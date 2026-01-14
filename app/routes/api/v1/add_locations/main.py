@@ -6,6 +6,7 @@ from app.utilities.shopify import (
     detect_identifier_type,
     set_fixed_quantity_to_variant
 )
+import pandas as pd
 
 
 def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: str = "adjust") -> list[dict, list, list, list]:
@@ -16,11 +17,20 @@ def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: st
     
     for row in data_rows:
         # Use 'barcode' if it exists, otherwise use 'sku'
-        # Convert to string to ensure consistent data types
+        # Convert to string and handle NaN/None values properly
         if "barcode" in row:
-            prod_reference.append(str(row["barcode"]))
+            val = row["barcode"]
         else:
-            prod_reference.append(str(row["sku"]))
+            val = row["sku"]
+        
+        # Convert to string and handle NaN, None, and float values
+        if pd.isna(val) or val is None:
+            prod_reference.append("EMPTY_SKU")
+        elif isinstance(val, float):
+            # Remove decimal point for float numbers that are actually integers
+            prod_reference.append(str(int(val)) if val == int(val) else str(val))
+        else:
+            prod_reference.append(str(val))
 
     print(f"DEBUG: Extracted {len(prod_reference)} references")
     print(f"DEBUG: Unique references: {len(set(prod_reference))}")
@@ -50,13 +60,18 @@ def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: st
     
     for variant in product_variants:
         if identifier_type == "barcode":
-            ref = variant.get("barcode")
+            val = variant.get("barcode")
         else:  # identifier_type == "sku"
-            ref = variant.get("sku")
+            val = variant.get("sku")
         
-        if ref:
-            # Ensure consistent string type
-            ref = str(ref)
+        if val:
+            # Ensure consistent string type with proper float handling
+            if pd.isna(val) or val is None:
+                continue
+            elif isinstance(val, float):
+                ref = str(int(val)) if val == int(val) else str(val)
+            else:
+                ref = str(val)
             variant_map[ref] = variant
             found_refs.add(ref)
     
@@ -67,17 +82,25 @@ def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: st
     
     for i, row in enumerate(data_rows):
         if identifier_type == "barcode":
-            row_ref = str(row.get("barcode"))
+            val = row.get("barcode")
         else:
-            row_ref = str(row.get("sku"))
+            val = row.get("sku")
+        
+        # Convert to string with proper handling
+        if pd.isna(val) or val is None:
+            row_ref = "EMPTY_SKU"
+        elif isinstance(val, float):
+            row_ref = str(int(val)) if val == int(val) else str(val)
+        else:
+            row_ref = str(val)
         
         if row_ref not in found_refs and row_ref not in missing_rows:
-            # This SKU doesn't exist in Shopify
-            missing_rows.append(row["sku"] if "sku" in row else row["barcode"])
+            # This SKU doesn't exist in Shopify - add only once
+            missing_rows.append(row_ref)
             
         if row_ref in seen_refs and row_ref not in duplicate_rows:
             # This SKU was already processed - it's a duplicate in the file
-            duplicate_rows.append(row["sku"] if "sku" in row else row["barcode"])
+            duplicate_rows.append(row_ref)
         
         if row_ref not in seen_refs:
             # First occurrence of this SKU
@@ -96,11 +119,19 @@ def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: st
     # Process each row and match with variants efficiently
     for i, row in enumerate(data_rows):
         print(f"DEBUG: Processing row {i+1}/{len(data_rows)}")
-        # Convert to string to ensure consistent data types
+        # Convert to string with proper handling
         if identifier_type == "barcode":
-            row_ref = str(row.get("barcode"))
-        else:  # identifier_type == "sku"
-            row_ref = str(row.get("sku"))
+            val = row.get("barcode")
+        else:
+            val = row.get("sku")
+        
+        # Convert to string with proper handling
+        if pd.isna(val) or val is None:
+            row_ref = "EMPTY_SKU"
+        elif isinstance(val, float):
+            row_ref = str(int(val)) if val == int(val) else str(val)
+        else:
+            row_ref = str(val)
         
         if row_ref in variant_map:
             variant = variant_map[row_ref]
@@ -191,9 +222,17 @@ def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: st
             new_inventories = []
             for i, row in enumerate(data_rows):
                 if identifier_type == "barcode":
-                    row_ref = str(row.get("barcode"))
+                    val = row.get("barcode")
                 else:
-                    row_ref = str(row.get("sku"))
+                    val = row.get("sku")
+                
+                # Convert to string with proper handling
+                if pd.isna(val) or val is None:
+                    row_ref = "EMPTY_SKU"
+                elif isinstance(val, float):
+                    row_ref = str(int(val)) if val == int(val) else str(val)
+                else:
+                    row_ref = str(val)
                 
                 if row_ref in variant_map:
                     variant = variant_map[row_ref]
