@@ -109,23 +109,88 @@ document.addEventListener("DOMContentLoaded", function() {
                 selectedFile = filename;
                 
                 if (data.ready_to_sync) {
-                    // File has all required data, show sync button directly
-                    showSyncButton(filename);
+                    // File has all required data and NO errors/warnings - show sync button in list
+                    showSyncModeSelection();
+                    addSyncButtonToListItem(filename);
                     responseBox.innerHTML = `
                         <div style="color: var(--color-primary);">
                             ✓ File "${filename}" is ready to sync!<br>
-                            Found all required columns: ${data.columns.join(", ")}
+                            Found all required columns: ${data.columns.join(", ")}<br>
+                            All ${data.columns.length} SKUs verified in Shopify.
                         </div>
                     `;
                 } else {
-                    // File is missing some data, show configuration
-                    showMissingFieldsConfig(data);
-                    responseBox.innerHTML = `
-                        <div style="color: var(--color-highlight);">
-                            ⚠ File "${filename}" is missing required data.<br>
-                            Please fill in the missing information below.
-                        </div>
-                    `;
+                    // File has errors or warnings - DO NOT allow syncing
+                    // Check if the issue is missing fields or missing/duplicate SKUs
+                    if (data.missing_fields && data.missing_fields.length > 0) {
+                        // File is missing required columns
+                        showMissingFieldsConfig(data);
+                        responseBox.innerHTML = `
+                            <div style="color: var(--color-highlight);">
+                                ⚠ File "${filename}" is missing required columns.<br>
+                                Please fill in the missing information below.
+                            </div>
+                        `;
+                    } else if ((data.missing_rows && data.missing_rows.length > 0) || (data.duplicate_rows && data.duplicate_rows.length > 0)) {
+                        // File has missing or duplicate SKUs - Show report ONLY, NO sync button
+                        responseBox.innerHTML = `
+                            <div style="color: var(--color-error); padding: 20px; background: #2a1a1a; border-radius: 8px; border: 2px solid var(--color-error);">
+                                <h3 style="margin-top: 0; color: var(--color-error);">❌ Cannot Sync - File Has Errors</h3>
+                                <p style="margin-bottom: 15px;">File "${filename}" cannot be synced due to the following issues:</p>
+                                ${data.missing_rows && data.missing_rows.length > 0 ? `
+                                    <div style="margin-bottom: 15px;">
+                                        <strong style="font-size: 2rem; margin: 5px 0;"> ⚠️ ${data.missing_rows.length} SKUs not found in Shopify</strong>
+                                        <p style="color: #bdbdbd; font-size: 1.5rem; margin: 5px 0;">These products don't exist in your store and cannot be updated.</p>
+                                        <button class="copy-missing-btn" style="display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 16px; background: var(--color-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem;" onclick='copyErrorSKUs(${JSON.stringify(data.missing_rows)}, "missing")'>
+                                            <svg width="20px" height="20px" viewBox="0 0 1024 1024" class="icon" version="1.1" xmlns="http://www.w3.org/2000/svg"><path d="M589.3 260.9v30H371.4v-30H268.9v513h117.2v-304l109.7-99.1h202.1V260.9z" fill="#E1F0FF" /><path d="M516.1 371.1l-122.9 99.8v346.8h370.4V371.1z" fill="#E1F0FF" /><path d="M752.7 370.8h21.8v435.8h-21.8z" fill="#446EB1" /><path d="M495.8 370.8h277.3v21.8H495.8z" fill="#446EB1" /><path d="M495.8 370.8h21.8v124.3h-21.8z" fill="#446EB1" /><path d="M397.7 488.7l-15.4-15.4 113.5-102.5 15.4 15.4z" fill="#446EB1" /><path d="M382.3 473.3h135.3v21.8H382.3z" fill="#446EB1" /><path d="M382.3 479.7h21.8v348.6h-21.8zM404.1 806.6h370.4v21.8H404.1z" fill="#446EB1" /><path d="M447.7 545.1h261.5v21.8H447.7zM447.7 610.5h261.5v21.8H447.7zM447.7 675.8h261.5v21.8H447.7z" fill="#6D9EE8" /><path d="M251.6 763h130.7v21.8H251.6z" fill="#446EB1" /><path d="M251.6 240.1h21.8v544.7h-21.8zM687.3 240.1h21.8v130.7h-21.8zM273.4 240.1h108.9v21.8H273.4z" fill="#446EB1" /><path d="M578.4 240.1h130.7v21.8H578.4zM360.5 196.5h21.8v108.9h-21.8zM382.3 283.7h196.1v21.8H382.3zM534.8 196.5h65.4v21.8h-65.4z" fill="#446EB1" /><path d="M360.5 196.5h65.4v21.8h-65.4zM404.1 174.7h152.5v21.8H404.1zM578.4 196.5h21.8v108.9h-21.8z" fill="#446EB1" /></svg>
+                                            <span>Copy Missing SKUs</span>
+                                        </button>
+                                    </div>
+                                ` : ''}
+                                ${data.duplicate_rows && data.duplicate_rows.length > 0 ? `
+                                    <div style="margin-bottom: 15px;">
+                                        <strong style="font-size: 2rem; margin: 5px 0;">⚠ ${data.duplicate_rows.length} duplicate SKUs in file</strong>
+                                        <p style="color: #bdbdbd; font-size: 1.5rem; margin: 5px 0;">These SKUs appear multiple times in the file.</p>
+                                        <button class="copy-duplicate-btn" style="display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 16px; background: var(--color-highlight); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem;" onclick='copyErrorSKUs(${JSON.stringify(data.duplicate_rows)}, "duplicate")'>
+                                            <svg width="20px" height="20px" viewBox="0 0 1024 1024" class="icon" version="1.1" xmlns="http://www.w3.org/2000/svg"><path d="M589.3 260.9v30H371.4v-30H268.9v513h117.2v-304l109.7-99.1h202.1V260.9z" fill="#E1F0FF" /><path d="M516.1 371.1l-122.9 99.8v346.8h370.4V371.1z" fill="#E1F0FF" /><path d="M752.7 370.8h21.8v435.8h-21.8z" fill="#446EB1" /><path d="M495.8 370.8h277.3v21.8H495.8z" fill="#446EB1" /><path d="M495.8 370.8h21.8v124.3h-21.8z" fill="#446EB1" /><path d="M397.7 488.7l-15.4-15.4 113.5-102.5 15.4 15.4z" fill="#446EB1" /><path d="M382.3 473.3h135.3v21.8H382.3z" fill="#446EB1" /><path d="M382.3 479.7h21.8v348.6h-21.8zM404.1 806.6h370.4v21.8H404.1z" fill="#446EB1" /><path d="M447.7 545.1h261.5v21.8H447.7zM447.7 610.5h261.5v21.8H447.7zM447.7 675.8h261.5v21.8H447.7z" fill="#6D9EE8" /><path d="M251.6 763h130.7v21.8H251.6z" fill="#446EB1" /><path d="M251.6 240.1h21.8v544.7h-21.8zM687.3 240.1h21.8v130.7h-21.8zM273.4 240.1h108.9v21.8H273.4z" fill="#446EB1" /><path d="M578.4 240.1h130.7v21.8H578.4zM360.5 196.5h21.8v108.9h-21.8zM382.3 283.7h196.1v21.8H382.3zM534.8 196.5h65.4v21.8h-65.4z" fill="#446EB1" /><path d="M360.5 196.5h65.4v21.8h-65.4zM404.1 174.7h152.5v21.8H404.1zM578.4 196.5h21.8v108.9h-21.8z" fill="#446EB1" /></svg>
+                                            <span>Copy Duplicate SKUs</span>
+                                        </button>
+                                    </div>
+                                ` : ''}
+                                <details style="margin-top: 15px;">
+                                    <summary style="cursor: pointer; color: var(--color-primary); font-weight: bold;">📋 View Detailed Report</summary>
+                                    <div style="margin-top: 10px; padding: 15px; background: #1a1a1a; border-radius: 4px; max-height: 300px; overflow-y: auto;">
+                                        ${data.missing_rows && data.missing_rows.length > 0 ? `
+                                            <div style="margin-bottom: 20px; width: 50%;">
+                                                <strong style="color: var(--color-error);">Missing SKUs (${data.missing_rows.length}):</strong>
+                                                <div style="margin-top: 8px; font-family: monospace; font-size: 1.4rem; color: #e0e0e0;">
+                                                    ${data.missing_rows.map((sku, i) => `<div style="padding: 2px 0;">${i + 1}. ${sku}</div>`).join('')}
+                                                </div>
+                                            </div>
+                                        ` : ''}
+                                        ${data.duplicate_rows && data.duplicate_rows.length > 0 ? `
+                                            <div>
+                                                <strong style="color: var(--color-highlight);">Duplicate SKUs (${data.duplicate_rows.length}):</strong>
+                                                <div style="margin-top: 8px; font-family: monospace; font-size: 1.4rem; color: #e0e0e0;">
+                                                    ${data.duplicate_rows.map((sku, i) => `<div style="padding: 2px 0;">${i + 1}. ${sku}</div>`).join('')}
+                                                </div>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </details>
+                                <p style="margin-top: 20px; color: #bdbdbd; font-size: 2rem; font-style: italic;">
+                                    ℹ️ Please fix these issues in your file and upload again to proceed with syncing.
+                                </p>
+                            </div>
+                        `;
+                    } else {
+                        // Unknown issue
+                        responseBox.innerHTML = `
+                            <div style="color: var(--color-highlight);">
+                                ⚠ ${data.detail || 'File cannot be synced at this time.'}
+                            </div>
+                        `;
+                    }
                 }
             } else {
                 responseBox.textContent = "Check error: " + (data.detail || "Unknown error");
@@ -224,8 +289,8 @@ document.addEventListener("DOMContentLoaded", function() {
         }, 10);
     }
 
-    // Show sync button directly if file is ready
-    function showSyncButton(filename) {
+    // Show sync mode selection panel (without the sync button)
+    function showSyncModeSelection() {
         syncConfig.innerHTML = `
             <h2>Quantity Update Strategy</h2>
             <p style="color: #bdbdbd; font-size: 1rem; margin-bottom: 1em;">
@@ -248,9 +313,6 @@ document.addEventListener("DOMContentLoaded", function() {
                 </button>
             </div>
             <input type="hidden" id="selected-sync-mode" value="adjust">
-            <button id="direct-sync" style="background: var(--color-primary); color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 1rem;">
-                Sync "${filename}"
-            </button>
         `;
         syncConfig.style.display = "block";
         
@@ -269,11 +331,34 @@ document.addEventListener("DOMContentLoaded", function() {
                 selectedModeInput.value = this.dataset.mode;
             });
         });
-        
-        document.getElementById("direct-sync").onclick = () => {
-            const mode = document.getElementById('selected-sync-mode').value;
-            syncFile(filename, mode);
-        };
+    }
+
+    // Add sync button to the specific file list item
+    function addSyncButtonToListItem(filename) {
+        const listItems = list.querySelectorAll('li');
+        listItems.forEach(item => {
+            const span = item.querySelector('span');
+            if (span && span.textContent === filename) {
+                const buttonContainer = item.querySelector('div');
+                // Remove any existing sync button first
+                const existingSyncBtn = buttonContainer.querySelector('.sync-btn');
+                if (existingSyncBtn) {
+                    existingSyncBtn.remove();
+                }
+                // Add new sync button after check button
+                const checkBtn = buttonContainer.querySelector('.check-btn');
+                const syncBtn = document.createElement('button');
+                syncBtn.className = 'sync-btn';
+                syncBtn.setAttribute('data-filename', encodeURIComponent(filename));
+                syncBtn.textContent = '▶ Sync';
+                syncBtn.style.cssText = 'background: var(--color-primary); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-left: 5px;';
+                syncBtn.onclick = () => {
+                    const mode = document.getElementById('selected-sync-mode')?.value || 'adjust';
+                    syncFile(filename, mode);
+                };
+                checkBtn.insertAdjacentElement('afterend', syncBtn);
+            }
+        });
     }
 
     // Save missing data to file and then sync
@@ -349,11 +434,11 @@ document.addEventListener("DOMContentLoaded", function() {
                 </div>
             `;
             
-            // Disable sync button if it exists
-            const syncBtn = document.getElementById("direct-sync");
-            if (syncBtn) {
-                syncBtn.disabled = true;
-                syncBtn.textContent = "Syncing...";
+            // Disable inline sync button
+            const inlineSyncBtn = list.querySelector(`button.sync-btn[data-filename="${encodeURIComponent(filename)}"]`);
+            if (inlineSyncBtn) {
+                inlineSyncBtn.disabled = true;
+                inlineSyncBtn.textContent = 'Syncing...';
             }
             
             // Send sync mode as form data
@@ -374,20 +459,20 @@ document.addEventListener("DOMContentLoaded", function() {
                 loadFiles();
             } else {
                 responseBox.textContent = "Sync error: " + (data.detail || "Unknown error");
-                // Re-enable button on error
-                const syncBtn = document.getElementById("direct-sync");
-                if (syncBtn) {
-                    syncBtn.disabled = false;
-                    syncBtn.textContent = `Sync "${filename}"`;
+                // Re-enable inline sync button on error
+                const inlineSyncBtn = list.querySelector(`button.sync-btn[data-filename="${encodeURIComponent(filename)}"]`);
+                if (inlineSyncBtn) {
+                    inlineSyncBtn.disabled = false;
+                    inlineSyncBtn.textContent = '▶ Sync';
                 }
             }
         } catch (err) {
             responseBox.textContent = "Sync error: " + err;
-            // Re-enable button on error
-            const syncBtn = document.getElementById("direct-sync");
-            if (syncBtn) {
-                syncBtn.disabled = false;
-                syncBtn.textContent = `Sync "${filename}"`;
+            // Re-enable inline sync button on error
+            const inlineSyncBtn = list.querySelector(`button.sync-btn[data-filename="${encodeURIComponent(filename)}"]`);
+            if (inlineSyncBtn) {
+                inlineSyncBtn.disabled = false;
+                inlineSyncBtn.textContent = '▶ Sync';
             }
         }
     }
@@ -426,6 +511,27 @@ document.addEventListener("DOMContentLoaded", function() {
         const textToCopy = skus.join("\n");
         navigator.clipboard.writeText(textToCopy).then(() => {
             btn.querySelector("span").innerHTML = "Copied!";
+            setTimeout(() => {
+                btn.querySelector("span").innerHTML = originalText;
+            }, 2000);
+        }).catch(err => {
+            alert("Failed to copy SKUs: " + err);
+        });
+    }
+    
+    // Function to copy error SKUs (missing or duplicate) from the check report
+    window.copyErrorSKUs = function(skus_array, type) {
+        const skus = skus_array || [];
+        const btnClass = type === "missing" ? ".copy-missing-btn" : ".copy-duplicate-btn";
+        const btn = document.querySelector(btnClass);
+        if (!btn) return;
+        
+        const originalText = btn.querySelector("span").innerHTML;
+
+        if (skus.length === 0) return;
+        const textToCopy = skus.join("\n");
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            btn.querySelector("span").innerHTML = "✓ Copied!";
             setTimeout(() => {
                 btn.querySelector("span").innerHTML = originalText;
             }, 2000);

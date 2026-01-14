@@ -74,10 +74,12 @@ def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: st
         if row_ref not in found_refs and row_ref not in missing_rows:
             # This SKU doesn't exist in Shopify
             missing_rows.append(row["sku"] if "sku" in row else row["barcode"])
-        elif row_ref in seen_refs and row_ref not in duplicate_rows:
+            
+        if row_ref in seen_refs and row_ref not in duplicate_rows:
             # This SKU was already processed - it's a duplicate in the file
             duplicate_rows.append(row["sku"] if "sku" in row else row["barcode"])
-        else:
+        
+        if row_ref not in seen_refs:
             # First occurrence of this SKU
             seen_refs[row_ref] = i
     

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 import pandas as pd
 
 from app.routes.api.v1.add_locations.main import get_product_variants_and_sync
+from app.utilities.shopify import detect_identifier_type, get_product_variants_by_identifier
 
 # Load config once at module level
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
@@ -126,6 +127,12 @@ async def check_file_structure(
     store_name = get_current_store_name(request)
     if not store_name:
         raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    
+    # Get store_id from header
+    store_id = request.headers.get("X-Selected-Store")
+    if not store_id:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    
     resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
     file_path = os.path.join(resources_dir, filename)
 
@@ -147,21 +154,98 @@ async def check_file_structure(
         # Check if required columns exist in the file (now all lowercase)
         has_location_in_file = any(col in ['id sede', 'location_id', 'location'] for col in df.columns)
         has_sale_channel_in_file = any(col in ['canali di vendita', 'canale di vendita', 'sale_channel'] for col in df.columns)
+        has_quantity_in_file = any(col in ['qta', 'quantity', 'qty', 'qtá'] for col in df.columns)
+        has_product_ref_in_file = any(col in ['sku', 'barcode'] for col in df.columns)
         
         missing_fields = []
         if not has_location_in_file:
             missing_fields.append("location_id")
         if not has_sale_channel_in_file:
             missing_fields.append("sale_channel")
+        if not has_quantity_in_file:
+            missing_fields.append("quantity")
+        if not has_product_ref_in_file:
+            missing_fields.append("sku/barcode")
         
+        if missing_fields:
+            print(f"DEBUG: File '{filename}' is missing fields: {missing_fields}")
+            return {
+                "filename": filename,
+                "columns": df.columns.tolist(),
+                "has_location": has_location_in_file,
+                "has_sale_channel": has_sale_channel_in_file,
+                "missing_fields": missing_fields,
+                "ready_to_sync": False,
+                "detail": f"File is missing required fields: {', '.join(missing_fields)}"
+            }
+        
+        # File Fields not missing then proceed to check products in file
+        print(f"DEBUG: File '{filename}' has all required fields.")
+        # check products in shopify
+        prod_reference = []
+        data_records = df.to_dict(orient="records")
+        for row in data_records:
+            # Use 'barcode' if it exists, otherwise use 'sku'
+            # Convert to string to ensure consistent data types
+            if "barcode" in row:
+                prod_reference.append(str(row["barcode"]))
+            else:
+                prod_reference.append(str(row["sku"]))
+        # Auto-detect based on content if SKU field is present
+        identifier_type = detect_identifier_type(prod_reference)
+        
+        product_variants = get_product_variants_by_identifier(prod_reference, identifier_type, store_id=store_id)
+        if not product_variants:
+            print("DEBUG: No variants found, returning early")
+            return {
+                "filename": filename,
+                "columns": df.columns.tolist(),
+                "has_location": has_location_in_file,
+                "has_sale_channel": has_sale_channel_in_file,
+                "missing_rows": prod_reference,
+                "duplicate_rows": [],
+                "ready_to_sync": False,
+                "detail": "No matching product variants found in Shopify."
+            }
+        
+            
+        # Find missing rows and duplicate rows separately
+        missing_rows = []
+        duplicate_rows = []
+        seen_refs = {}
+        found_refs = set(variant.get(identifier_type) for variant in product_variants if variant.get(identifier_type))
+        
+        for i, row in enumerate(data_records):
+            if identifier_type == "barcode":
+                row_ref = str(row.get("barcode"))
+            else:
+                row_ref = str(row.get("sku"))
+            
+            if row_ref not in found_refs and row_ref not in missing_rows:
+                # This SKU doesn't exist in Shopify
+                missing_rows.append(row["sku"] if "sku" in row else row["barcode"])
+                
+            if row_ref in seen_refs and row_ref not in duplicate_rows:
+                # This SKU was already processed - it's a duplicate in the file
+                duplicate_rows.append(row["sku"] if "sku" in row else row["barcode"])
+            
+            if row_ref not in seen_refs:
+                # First occurrence of this SKU
+                seen_refs[row_ref] = i
+        
+        # Return the final result with all information
+        ready_to_sync = len(missing_rows) == 0 and len(duplicate_rows) == 0
         return {
             "filename": filename,
             "columns": df.columns.tolist(),
             "has_location": has_location_in_file,
             "has_sale_channel": has_sale_channel_in_file,
-            "missing_fields": missing_fields,
-            "ready_to_sync": len(missing_fields) == 0
+            "missing_rows": missing_rows,
+            "duplicate_rows": duplicate_rows,
+            "ready_to_sync": ready_to_sync,
+            "detail": "File is ready to sync!" if ready_to_sync else f"File has {len(missing_rows)} missing SKUs and {len(duplicate_rows)} duplicate SKUs."
         }
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error checking file: {e}")
 
