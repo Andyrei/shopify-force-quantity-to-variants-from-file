@@ -4,7 +4,6 @@ import json
 import toml
 from pathlib import Path
 from datetime import datetime
-from datetime import datetime
 from shopify.base import ShopifyConnection
 
 """
@@ -79,7 +78,6 @@ def shopify_connection(credentials: dict = None, store_id: str = None) -> tuple[
         print(f"Error: {e}")
         return None
 
-
 def shopify_query_graph(query: str=None, operation_name: str=None, variables: dict|None = None, store_id: str = None) -> dict:
     """
         Execute a GraphQL query against the Shopify API.
@@ -131,7 +129,6 @@ def shopify_query_graph(query: str=None, operation_name: str=None, variables: di
             return {"errors": value["userErrors"]}
 
     return res["data"]
-
 
 def check_product_exists(shopify_session: ShopifyConnection, channel_reference: str, product_reference: str) -> tuple[bool, float]:
     """
@@ -285,6 +282,13 @@ def get_product_variants_by_identifier(identifier_list: list, identifier_type: s
         raise ValueError(f"Invalid identifier_type: {identifier_type}. Must be 'sku', 'barcode', or 'auto'")
 
 def get_product_variants_by_barcode(barcode_list: list, store_id: str = None) -> list[dict]:
+    """ 
+        Get product variants by barcode with pagination support.
+        Shopify limits to 250 results per query, so we loop until we get all variants.
+        :param barcode_list: List of barcodes to search for
+        :param store_id: The store ID from config
+        :return: List of product variant nodes
+    """
     gql_query="""#gql
         query GetProductVariantByBarcode($query: String!, $after: String) {
             productVariants(first: 250, query: $query, after: $after) {
@@ -352,12 +356,17 @@ def get_product_variants_by_barcode(barcode_list: list, store_id: str = None) ->
     return all_variants
 
 def set_activate_quantity_on_location(inventoryItemId: str, locationId: str, store_id: str = None):
+    """
+        https://shopify.dev/docs/api/admin-graphql/latest/mutations/inventoryActivate
+    """    
+
+
     gql_query = """#gql
         mutation ActivateInventoryItem($inventoryItemId: ID!, $locationId: ID!, $available: Int) {
             inventoryActivate(inventoryItemId: $inventoryItemId, locationId: $locationId, available: $available) {
                 inventoryLevel {
                     id
-                    quantities(names: ["available"]) {
+                    quantities(names: ["available", "on_hand"]) {
                         name
                         quantity
                     }
@@ -375,7 +384,7 @@ def set_activate_quantity_on_location(inventoryItemId: str, locationId: str, sto
     gql_variables = {
        "inventoryItemId": inventoryItemId,
        "locationId": locationId,
-       "available": 0
+    #    "available": 0  # Set to 0 to activate without changing quantity
     }
     
     result = shopify_query_graph(
@@ -623,7 +632,6 @@ def set_fixed_quantity_to_variant(inventories: list[dict], store_id: str = None)
     
     return None
     
-
 def add_to_sale_channels(resource_id: object, channels: list[dict], store_id: str = None) -> dict | None:
     """
     Adds products to sale channels in Shopify.
