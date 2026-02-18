@@ -297,17 +297,17 @@ document.addEventListener("DOMContentLoaded", function() {
                 Choose how inventory quantities should be updated:
             </p>
             <div style="display: flex; gap: 1em; flex-wrap: wrap; margin-bottom: 1.5em;">
-                <button class="sync-mode-btn" data-mode="tabula_rasa" style="flex: 1; min-width: 200px; padding: 15px; border: 2px solid #444; background: #2a2a2a; color: white; border-radius: 8px; cursor: pointer; transition: all 0.3s;">
+                <button class="sync-mode-btn disabled" disabled data-mode="tabula_rasa">
                     <strong>Tabula Rasa</strong>
                     <p style="font-size: 0.85em; margin-top: 5px; color: #bdbdbd;">Set all to 0, then apply file values</p>
                 </button>
                 
-                <button class="sync-mode-btn active" data-mode="adjust" style="flex: 1; min-width: 200px; padding: 15px; border: 2px solid var(--color-primary); background: #2a2a2a; color: white; border-radius: 8px; cursor: pointer; transition: all 0.3s;">
+                <button class="sync-mode-btn active" data-mode="adjust">
                     <strong>Adjust Quantity</strong>
                     <p style="font-size: 0.85em; margin-top: 5px; color: #bdbdbd;">Add/subtract from existing</p>
                 </button>
                 
-                <button class="sync-mode-btn" data-mode="replace" style="flex: 1; min-width: 200px; padding: 15px; border: 2px solid #444; background: #2a2a2a; color: white; border-radius: 8px; cursor: pointer; transition: all 0.3s;">
+                <button class="sync-mode-btn disabled" data-mode="replace" disabled>
                     <strong>Replace Quantity</strong>
                     <p style="font-size: 0.85em; margin-top: 5px; color: #bdbdbd;">Set to exact file values</p>
                 </button>

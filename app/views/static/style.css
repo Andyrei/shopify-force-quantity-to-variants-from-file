@@ -447,3 +447,52 @@ footer {
     font-size: 0.9rem;
     color: #888;
 }
+
+/* strategy buttons */
+.sync-mode-btn {
+    flex: 1; 
+    min-width: 200px; 
+    padding: 15px; 
+    border: 2px solid #444; 
+    background: #2a2a2a; 
+    color: white; 
+    border-radius: 8px; 
+    cursor: pointer; 
+    transition: all 0.3s;
+    position: relative;
+}
+.sync-mode-btn.disabled {
+    cursor: not-allowed;
+}
+
+.sync-mode-btn.disabled::after {
+    content: 'coming soon';
+    font-size: 0.85em;
+    text-transform: uppercase;
+    color: #000;
+    background: none;
+    border: none;
+    background: #ffd700;
+    padding: 4px 10px;
+    border-radius: 999999999px;
+    position: absolute;
+    left: -4%;
+    top: 15%;
+    rotate: -28deg;
+}
+.sync-mode-btn.disabled::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(72, 71, 71, 0.36);
+    border-radius: 8px;
+}
+
+.sync-mode-btn.active {
+    border-color: var(--color-primary);
+    background: #2a2a2a;
+    color: white;
+}
