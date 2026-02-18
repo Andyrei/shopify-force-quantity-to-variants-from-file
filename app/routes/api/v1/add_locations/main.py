@@ -6,105 +6,115 @@ from app.utilities.shopify import (
     detect_identifier_type,
     set_fixed_quantity_to_variant
 )
+from app.utilities.logger import create_sync_logger
 import pandas as pd
 
 
-def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: str = "adjust") -> list[dict, list, list, list]:
-    
-    print(f"DEBUG: Starting sync with {len(data_rows)} rows for store: {store_id}, mode: {sync_mode}")
-    
-    prod_reference = []
-    
-    for row in data_rows:
-        # Use 'barcode' if it exists, otherwise use 'sku'
-        # Convert to string and handle NaN/None values properly
-        if "barcode" in row:
-            val = row["barcode"]
-        else:
-            val = row["sku"]
-        
-        # Convert to string and handle NaN, None, and float values
-        if pd.isna(val) or val is None:
-            prod_reference.append("EMPTY_SKU")
-        elif isinstance(val, float):
-            # Remove decimal point for float numbers that are actually integers
-            prod_reference.append(str(int(val)) if val == int(val) else str(val))
-        else:
-            prod_reference.append(str(val))
-
-    print(f"DEBUG: Extracted {len(prod_reference)} references")
-    print(f"DEBUG: Unique references: {len(set(prod_reference))}")
-    print(f"DEBUG: Duplicate references in file: {len(prod_reference) - len(set(prod_reference))}")
-    print(f"DEBUG: Sample references: {prod_reference[:3] if prod_reference else 'None'}")
-
-    # Determine identifier type - prioritize explicit field presence, fallback to auto-detection
-    use_barcode = "barcode" in data_rows[0]
-    if use_barcode:
-        identifier_type = "barcode"
+def _normalize_reference_value(value) -> str:
+    """
+    Normalize a reference value (barcode/sku) to a consistent string format.
+    Handles NaN, None, float, and string values.
+    """
+    if pd.isna(value) or value is None:
+        return "EMPTY_SKU"
+    elif isinstance(value, float):
+        return str(int(value)) if value == int(value) else str(value)
     else:
-        # Auto-detect based on content if SKU field is present
-        identifier_type = detect_identifier_type(prod_reference)
-    
-    print(f"DEBUG: Using {identifier_type} search (field-based: {use_barcode})")
-    product_variants = get_product_variants_by_identifier(prod_reference, identifier_type, store_id=store_id)
-    
-    print(f"DEBUG: Found {len(product_variants) if product_variants else 0} variants from Shopify")
-    
-    if not product_variants:
-        print("DEBUG: No variants found, returning early")
-        return [], prod_reference, [], []
-    
-    # Create a mapping of variants by their reference (barcode or sku)
+        return str(value)
+
+
+def _extract_reference_from_row(row: dict, identifier_type: str) -> str:
+    """Extract and normalize the reference value from a data row."""
+    if identifier_type == "barcode":
+        val = row.get("barcode")
+    else:
+        val = row.get("sku")
+    return _normalize_reference_value(val)
+
+
+def _build_variant_map(product_variants: list, identifier_type: str) -> tuple[dict, set]:
+    """
+    Build a mapping of variants by their reference (barcode or sku).
+    Returns: (variant_map, found_refs)
+    """
     variant_map = {}
     found_refs = set()
     
     for variant in product_variants:
-        if identifier_type == "barcode":
-            val = variant.get("barcode")
-        else:  # identifier_type == "sku"
-            val = variant.get("sku")
-        
+        val = variant.get(identifier_type)
         if val:
-            # Ensure consistent string type with proper float handling
-            if pd.isna(val) or val is None:
-                continue
-            elif isinstance(val, float):
-                ref = str(int(val)) if val == int(val) else str(val)
-            else:
-                ref = str(val)
+            ref = _normalize_reference_value(val)
             variant_map[ref] = variant
             found_refs.add(ref)
     
-    # Find missing rows and duplicate rows separately
+    return variant_map, found_refs
+
+
+def _detect_missing_and_duplicates(data_rows: list, found_refs: set, identifier_type: str) -> tuple[list, list]:
+    """
+    Detect missing and duplicate references in data rows.
+    Returns: (missing_rows, duplicate_rows)
+    """
     missing_rows = []
     duplicate_rows = []
     seen_refs = {}
     
     for i, row in enumerate(data_rows):
-        if identifier_type == "barcode":
-            val = row.get("barcode")
-        else:
-            val = row.get("sku")
+        row_ref = _extract_reference_from_row(row, identifier_type)
         
-        # Convert to string with proper handling
-        if pd.isna(val) or val is None:
-            row_ref = "EMPTY_SKU"
-        elif isinstance(val, float):
-            row_ref = str(int(val)) if val == int(val) else str(val)
-        else:
-            row_ref = str(val)
-        
+        # Check if missing (not found in Shopify)
         if row_ref not in found_refs and row_ref not in missing_rows:
-            # This SKU doesn't exist in Shopify - add only once
             missing_rows.append(row_ref)
-            
+        
+        # Check if duplicate (appears multiple times in file)
         if row_ref in seen_refs and row_ref not in duplicate_rows:
-            # This SKU was already processed - it's a duplicate in the file
             duplicate_rows.append(row_ref)
         
         if row_ref not in seen_refs:
-            # First occurrence of this SKU
             seen_refs[row_ref] = i
+    
+    return missing_rows, duplicate_rows
+
+
+def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: str = "adjust") -> list[dict, list, list, list]:
+    
+    # Initialize logger for this sync operation
+    logger = create_sync_logger(store_name=store_id or "unknown_store")
+    logger.log_sync_start(total_rows=len(data_rows), sync_mode=sync_mode)
+    
+    print(f"DEBUG: Starting sync with {len(data_rows)} rows for store: {store_id}, mode: {sync_mode}")
+    
+    # Determine identifier type - prioritize explicit field presence
+    use_barcode = "barcode" in data_rows[0] if data_rows else False
+    if use_barcode:
+        identifier_type = "barcode"
+    else:
+        # Auto-detect based on content if SKU field is present
+        temp_references = [_extract_reference_from_row(row, "sku") for row in data_rows[:100]]  # Sample first 100
+        identifier_type = detect_identifier_type(temp_references)
+    
+    # Extract all references from data rows using helper function
+    prod_reference = [_extract_reference_from_row(row, identifier_type) for row in data_rows]
+
+    print(f"DEBUG: Extracted {len(prod_reference)} references")
+    print(f"DEBUG: Unique references: {len(set(prod_reference))}")
+    logger.info(f"Using {identifier_type} for product search")
+    
+    product_variants = get_product_variants_by_identifier(prod_reference, identifier_type, store_id=store_id)
+    
+    print(f"DEBUG: Found {len(product_variants) if product_variants else 0} variants from Shopify")
+    logger.info(f"Found {len(product_variants) if product_variants else 0} variants from Shopify")
+    
+    if not product_variants:
+        print("DEBUG: No variants found, returning early")
+        logger.error("No variants found in Shopify matching the provided references")
+        return [], prod_reference, [], []
+    
+    # Build variant mapping and find all existing references using helper function
+    variant_map, found_refs = _build_variant_map(product_variants, identifier_type)
+    
+    # Detect missing and duplicate rows using helper function
+    missing_rows, duplicate_rows = _detect_missing_and_duplicates(data_rows, found_refs, identifier_type)
     
     print(f"DEBUG: prod_reference types: {[type(ref).__name__ for ref in prod_reference[:3]]}")
     print(f"DEBUG: found_refs types: {[type(ref).__name__ for ref in list(found_refs)[:3]]}")
@@ -113,25 +123,19 @@ def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: st
     print(f"DEBUG: Missing unique SKUs: {len(set(prod_reference) - found_refs)}")
     print(f"DEBUG: Found references: {len(found_refs)}")
     
+    # Log missing and duplicate items
+    logger.log_missing_items(missing_rows)
+    logger.log_duplicate_items(duplicate_rows)
+    
     inventories = []
     result = None
     
     # Process each row and match with variants efficiently
     for i, row in enumerate(data_rows):
         print(f"DEBUG: Processing row {i+1}/{len(data_rows)}")
-        # Convert to string with proper handling
-        if identifier_type == "barcode":
-            val = row.get("barcode")
-        else:
-            val = row.get("sku")
         
-        # Convert to string with proper handling
-        if pd.isna(val) or val is None:
-            row_ref = "EMPTY_SKU"
-        elif isinstance(val, float):
-            row_ref = str(int(val)) if val == int(val) else str(val)
-        else:
-            row_ref = str(val)
+        # Extract reference using helper function
+        row_ref = _extract_reference_from_row(row, identifier_type)
         
         if row_ref in variant_map:
             variant = variant_map[row_ref]
@@ -144,7 +148,9 @@ def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: st
             if row_location_id:
                 location_id_full = f"gid://shopify/Location/{row_location_id}"
             else:
-                print(f"WARNING: No location ID found for row {row_ref}")
+                warning_msg = f"No location ID found for row {row_ref}"
+                print(f"WARNING: {warning_msg}")
+                logger.warning(warning_msg)
                 continue
             
             delta_quantity = row["qta"]
@@ -154,7 +160,9 @@ def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: st
             if row_sale_channel:
                 sale_channels_value = row_sale_channel
             else:
-                print(f"WARNING: No sale channel found for row {row_ref}")
+                warning_msg = f"No sale channel found for row {row_ref}"
+                print(f"WARNING: {warning_msg}")
+                logger.warning(warning_msg)
                 sale_channels_value = ""
             
             if sale_channels_value:
@@ -208,44 +216,96 @@ def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: st
     # Only adjust quantities if no variants are missing
     if not missing_rows and not duplicate_rows and inventories:
         print(f"DEBUG: Updating quantities for {len(inventories)} inventory items using mode: {sync_mode}")
+        logger.info(f"Updating quantities for {len(inventories)} inventory items using mode: {sync_mode}")
         
-        if sync_mode == "adjust":
-            # Use delta-based adjustment
-            result = adjust_quantity_to_variant(inventories=inventories, store_id=store_id)
-        elif sync_mode == "replace":
-            # Set to exact quantities
-            result = set_fixed_quantity_to_variant(inventories=inventories, store_id=store_id)
-        elif sync_mode == "tabula_rasa":
-            # First set all to 0, then set to file quantities
-            result = set_fixed_quantity_to_variant(inventories=inventories, store_id=store_id)
-            # Now build new inventory with actual quantities and set them
-            new_inventories = []
-            for i, row in enumerate(data_rows):
-                if identifier_type == "barcode":
-                    val = row.get("barcode")
-                else:
-                    val = row.get("sku")
-                
-                # Convert to string with proper handling
-                if pd.isna(val) or val is None:
-                    row_ref = "EMPTY_SKU"
-                elif isinstance(val, float):
-                    row_ref = str(int(val)) if val == int(val) else str(val)
-                else:
-                    row_ref = str(val)
-                
-                if row_ref in variant_map:
-                    variant = variant_map[row_ref]
-                    inventory_item = variant["inventoryItem"]["id"]
-                    row_location_id = row.get("id sede") or row.get("location_id") or row.get("location")
-                    if row_location_id:
-                        location_id_full = f"gid://shopify/Location/{row_location_id}"
-                        new_inventories.append({
-                            "quantity": row["qta"],
-                            "inventoryItemId": inventory_item,
-                            "locationId": location_id_full
-                        })
-            if new_inventories:
-                result = set_fixed_quantity_to_variant(inventories=new_inventories, store_id=store_id)
+        try:
+            if sync_mode == "adjust":
+                # Use delta-based adjustment
+                logger.info("Executing adjust sync mode (delta-based)")
+                result = adjust_quantity_to_variant(inventories=inventories, store_id=store_id)
+                logger.success(f"Successfully adjusted quantities for {len(inventories)} items")
+            elif sync_mode == "replace":
+                # Set to exact quantities
+                logger.info("Executing replace sync mode (exact quantities)")
+                # result = set_fixed_quantity_to_variant(inventories=inventories, store_id=store_id)
+                result = {
+                    "changes": [],
+                    "createdAt": pd.Timestamp.now().isoformat(),
+                    "reason": "correction",
+                    "error": "The 'replace' sync mode is currently a placeholder and needs to be implemented with the actual GraphQL mutation to set fixed quantities in Shopify."
+                }
+                logger.warning("Replace mode is not yet implemented")
+            elif sync_mode == "tabula_rasa":
+                # First set all to 0, then set to file quantities
+                logger.info("Executing tabula_rasa sync mode (reset and set)")
+                # result = set_fixed_quantity_to_variant(inventories=inventories, store_id=store_id)
+                # Now build new inventory with actual quantities and set them
+                # new_inventories = []
+                # for i, row in enumerate(data_rows):
+                #     if identifier_type == "barcode":
+                #         val = row.get("barcode")
+                #     else:
+                #         val = row.get("sku")
+                    
+                #     # Convert to string with proper handling
+                #     if pd.isna(val) or val is None:
+                #         row_ref = "EMPTY_SKU"
+                #     elif isinstance(val, float):
+                #         row_ref = str(int(val)) if val == int(val) else str(val)
+                #     else:
+                #         row_ref = str(val)
+                    
+                #     if row_ref in variant_map:
+                #         variant = variant_map[row_ref]
+                #         inventory_item = variant["inventoryItem"]["id"]
+                #         row_location_id = row.get("id sede") or row.get("location_id") or row.get("location")
+                #         if row_location_id:
+                #             location_id_full = f"gid://shopify/Location/{row_location_id}"
+                #             new_inventories.append({
+                #                 "quantity": row["qta"],
+                #                 "inventoryItemId": inventory_item,
+                #                 "locationId": location_id_full
+                #             })
+                # if new_inventories:
+                #     result = set_fixed_quantity_to_variant(inventories=new_inventories, store_id=store_id)
+
+                result = {
+                    "changes": [],
+                    "createdAt": pd.Timestamp.now().isoformat(),
+                    "reason": "correction",
+                    "error": "The 'tabula_rasa' sync mode is currently a placeholder and needs to be implemented with the actual GraphQL mutation to set fixed quantities in Shopify. This mode should first set all quantities to 0, then set to the file quantities in a second step."
+                }
+                logger.warning("Tabula rasa mode is not yet implemented")
+        except Exception as e:
+            logger.log_exception(e, context="quantity adjustment")
+            result = None
+    else:
+        if missing_rows:
+            logger.error(f"Sync blocked: {len(missing_rows)} missing items found")
+        if duplicate_rows:
+            logger.error(f"Sync blocked: {len(duplicate_rows)} duplicate items found")
+        if not inventories:
+            logger.warning("No inventory items to update")
+    
+    # Parse and save changes to CSV
+    if result:
+        csv_path = logger.parse_and_save_changes(result, sync_mode)
+        if csv_path:
+            logger.success(f"Quantity changes saved to: {csv_path}")
+    
+    # Log summary
+    changes_count = 0
+    if result and "inventoryAdjustQuantities" in result:
+        changes = result["inventoryAdjustQuantities"].get("inventoryAdjustmentGroup", {}).get("changes", [])
+        changes_count = len(changes)
+    elif result and "changes" in result:
+        changes_count = len(result["changes"])
+    
+    logger.log_sync_summary(
+        total_processed=len(data_rows),
+        missing_count=len(missing_rows),
+        duplicate_count=len(duplicate_rows),
+        changes_count=changes_count
+    )
         
     return result, missing_rows, duplicate_rows, found_refs
