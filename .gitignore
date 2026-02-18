@@ -9,3 +9,4 @@ __pycache__/
 *.pyo
 *.pyd
 config_stores.toml
+logs/
