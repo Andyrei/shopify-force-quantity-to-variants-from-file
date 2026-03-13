@@ -185,48 +185,58 @@ def get_product_variants_by_sku(sku_list: list, store_id: str = None) -> list[di
             }
         }
     """
-    # Build the query string for one or multiple SKUs
-    if len(sku_list) == 1:
-        query_str = f"sku:{sku_list[0]}"
-    else:
-        query_str = " OR ".join([f"sku:{s}" for s in sku_list])
-
+    # Shopify search queries have a complexity/length limit, so batch the input list
+    QUERY_BATCH_SIZE = 100
     all_variants = []
-    has_next_page = True
-    cursor = None
-    
-    while has_next_page:
-        gql_variables = {
-            "query": query_str,
-            "after": cursor
-        }
-        
-        result = shopify_query_graph(
-                query=gql_query,
-                operation_name="GetProductVariantBySku",
-                variables=gql_variables,
-                store_id=store_id
-        )
-        
-        if "error" in result:
-            print(f"ERROR in get_product_variants_by_sku: {result['error']}")
-            return None
-        
-        if "errors" in result:
-            return None
-            
-        if result and "productVariants" in result:
-            variants = result["productVariants"]["nodes"]
-            all_variants.extend(variants)
-            
-            page_info = result["productVariants"]["pageInfo"]
-            has_next_page = page_info.get("hasNextPage", False)
-            cursor = page_info.get("endCursor")
-            
-            print(f"DEBUG: Fetched {len(variants)} variants, total so far: {len(all_variants)}")
+    total_batches = (len(sku_list) + QUERY_BATCH_SIZE - 1) // QUERY_BATCH_SIZE
+
+    for batch_idx in range(0, len(sku_list), QUERY_BATCH_SIZE):
+        batch = sku_list[batch_idx:batch_idx + QUERY_BATCH_SIZE]
+        batch_num = (batch_idx // QUERY_BATCH_SIZE) + 1
+        print(f"DEBUG: SKU query batch {batch_num}/{total_batches} ({len(batch)} SKUs)")
+
+        if len(batch) == 1:
+            query_str = f"sku:{batch[0]}"
         else:
-            break
-    
+            query_str = " OR ".join([f"sku:{s}" for s in batch])
+
+        has_next_page = True
+        cursor = None
+
+        while has_next_page:
+            gql_variables = {
+                "query": query_str,
+                "after": cursor
+            }
+            
+            result = shopify_query_graph(
+                    query=gql_query,
+                    operation_name="GetProductVariantBySku",
+                    variables=gql_variables,
+                    store_id=store_id
+            )
+            
+            if "error" in result:
+                print(f"ERROR in get_product_variants_by_sku: {result['error']}")
+                return None
+            
+            if "errors" in result:
+                print(f"ERROR in get_product_variants_by_sku: {result['errors']}")
+                return None
+                
+            if result and "productVariants" in result:
+                variants = result["productVariants"]["nodes"]
+                all_variants.extend(variants)
+                
+                page_info = result["productVariants"]["pageInfo"]
+                has_next_page = page_info.get("hasNextPage", False)
+                cursor = page_info.get("endCursor")
+                
+                print(f"DEBUG: Fetched {len(variants)} variants, total so far: {len(all_variants)}")
+            else:
+                break
+
+    print(f"DEBUG: Completed SKU query with total {len(all_variants)} variants found")
     return all_variants
 
 def detect_identifier_type(identifiers: list) -> str:
@@ -311,48 +321,57 @@ def get_product_variants_by_barcode(barcode_list: list, store_id: str = None) ->
             }
         }
     """
-    # Build the query string for one or multiple SKUs
-    if len(barcode_list) == 1:
-        query_str = f"barcode:{barcode_list[0]}"
-    else:
-        query_str = " OR ".join([f"barcode:{b}" for b in barcode_list])
-
+    # Shopify search queries have a complexity/length limit, so batch the input list
+    QUERY_BATCH_SIZE = 100
     all_variants = []
-    has_next_page = True
-    cursor = None
-    
-    while has_next_page:
-        gql_variables = {
-            "query": query_str,
-            "after": cursor
-        }
-        
-        result = shopify_query_graph(
-                query=gql_query,
-                operation_name="GetProductVariantByBarcode",
-                variables=gql_variables,
-                store_id=store_id
-        )
-        
-        if "error" in result:
-            print(f"ERROR in get_product_variants_by_barcode: {result['error']}")
-            return None
-        
-        if "errors" in result:
-            return None
-            
-        if result and "productVariants" in result:
-            variants = result["productVariants"]["nodes"]
-            all_variants.extend(variants)
-            
-            page_info = result["productVariants"]["pageInfo"]
-            has_next_page = page_info.get("hasNextPage", False)
-            cursor = page_info.get("endCursor")
-            
-            print(f"DEBUG: Fetched {len(variants)} variants, total so far: {len(all_variants)}")
+    total_batches = (len(barcode_list) + QUERY_BATCH_SIZE - 1) // QUERY_BATCH_SIZE
+
+    for batch_idx in range(0, len(barcode_list), QUERY_BATCH_SIZE):
+        batch = barcode_list[batch_idx:batch_idx + QUERY_BATCH_SIZE]
+        batch_num = (batch_idx // QUERY_BATCH_SIZE) + 1
+        print(f"DEBUG: Barcode query batch {batch_num}/{total_batches} ({len(batch)} barcodes)")
+
+        if len(batch) == 1:
+            query_str = f"barcode:{batch[0]}"
         else:
-            break
-    
+            query_str = " OR ".join([f"barcode:{b}" for b in batch])
+
+        has_next_page = True
+        cursor = None
+
+        while has_next_page:
+            gql_variables = {
+                "query": query_str,
+                "after": cursor
+            }
+            
+            result = shopify_query_graph(
+                    query=gql_query,
+                    operation_name="GetProductVariantByBarcode",
+                    variables=gql_variables,
+                    store_id=store_id
+            )
+            
+            if "error" in result:
+                print(f"ERROR in get_product_variants_by_barcode: {result['error']}")
+                return None
+            
+            if "errors" in result:
+                print(f"ERROR in get_product_variants_by_barcode: {result['errors']}")
+                return None
+                
+            if result and "productVariants" in result:
+                variants = result["productVariants"]["nodes"]
+                all_variants.extend(variants)
+                
+                page_info = result["productVariants"]["pageInfo"]
+                has_next_page = page_info.get("hasNextPage", False)
+                cursor = page_info.get("endCursor")
+                
+                print(f"DEBUG: Fetched {len(variants)} variants, total so far: {len(all_variants)}")
+            else:
+                break
+    print(f"DEBUG: Completed barcode query with total {len(all_variants)} variants found")
     return all_variants
 
 def set_activate_quantity_on_location(inventoryItemId: str, locationId: str, store_id: str = None):
