@@ -196,9 +196,9 @@ def get_product_variants_by_sku(sku_list: list, store_id: str = None) -> list[di
         print(f"DEBUG: SKU query batch {batch_num}/{total_batches} ({len(batch)} SKUs)")
 
         if len(batch) == 1:
-            query_str = f"sku:{batch[0]}"
+            query_str = f'sku:"{batch[0]}"'
         else:
-            query_str = " OR ".join([f"sku:{s}" for s in batch])
+            query_str = " OR ".join([f'sku:"{s}"' for s in batch])
 
         has_next_page = True
         cursor = None
@@ -332,9 +332,9 @@ def get_product_variants_by_barcode(barcode_list: list, store_id: str = None) ->
         print(f"DEBUG: Barcode query batch {batch_num}/{total_batches} ({len(batch)} barcodes)")
 
         if len(batch) == 1:
-            query_str = f"barcode:{batch[0]}"
+            query_str = f'barcode:"{batch[0]}"'
         else:
-            query_str = " OR ".join([f"barcode:{b}" for b in batch])
+            query_str = " OR ".join([f'barcode:"{b}"' for b in batch])
 
         has_next_page = True
         cursor = None
