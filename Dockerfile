@@ -41,7 +41,7 @@ EXPOSE 9999
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:9999/docs')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:9999/docs')" || exit 1
 
 # Command to run the application
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9999"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9999", "--proxy-headers", "--forwarded-allow-ips=*"]

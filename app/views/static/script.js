@@ -7,10 +7,13 @@ document.addEventListener("DOMContentLoaded", function() {
     // Get selected store from localStorage
     const selectedStore = localStorage.getItem('selectedStore');
     
-    // Override fetch to add store header
+    // Override fetch to add store header and root path prefix
     const originalFetch = window.fetch;
     window.fetch = function(...args) {
-        const [url, options = {}] = args;
+        let [url, options = {}] = args;
+        if (typeof url === 'string' && url.startsWith('/') && window.ROOT_PATH) {
+            url = window.ROOT_PATH + url;
+        }
         if (selectedStore) {
             options.headers = {
                 ...options.headers,

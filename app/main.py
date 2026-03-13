@@ -13,7 +13,8 @@ app = FastAPI(
     version="0.0.1", 
     title="Custom Quantity by sku", 
     description="",
-    docs_url="/docs", 
+    docs_url="/docs",
+    root_path=os.getenv("ROOT_PATH", ""),
 )
 
 app.mount("/static", StaticFiles(directory="app/views/static"), name="static")
