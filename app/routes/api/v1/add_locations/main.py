@@ -76,10 +76,15 @@ def _detect_missing_and_duplicates(data_rows: list, found_refs: set, identifier_
     return missing_rows, duplicate_rows
 
 
-def get_product_variants_and_sync(data_rows, store_id: str = None, sync_mode: str = "adjust") -> list[dict, list, list, list]:
+def get_product_variants_and_sync(
+    data_rows,
+    store_id: str = None,
+    sync_mode: str = "adjust",
+    log_store_name: str = None,
+) -> list[dict, list, list, list]:
     
     # Initialize logger for this sync operation
-    logger = create_sync_logger(store_name=store_id or "unknown_store")
+    logger = create_sync_logger(store_name=log_store_name or store_id or "unknown_store")
     logger.log_sync_start(total_rows=len(data_rows), sync_mode=sync_mode)
     
     print(f"DEBUG: Starting sync with {len(data_rows)} rows for store: {store_id}, mode: {sync_mode}")

@@ -86,6 +86,26 @@ def get_current_store_name(request: Request = None):
     
     return None
 
+
+def get_current_store_id(request: Request = None):
+    """Get current store id from header or environment mapping."""
+    store_id = None
+
+    if request:
+        store_id = request.headers.get("X-Selected-Store")
+
+    if store_id:
+        return store_id
+
+    env_store = os.getenv("STORE_NAME")
+    if env_store:
+        stores = config.get("stores", {})
+        for sid, sconfig in stores.items():
+            if sconfig.get("STORE_NAME") == env_store:
+                return sid
+
+    return None
+
 def get_store_config(request: Request = None):
     """Get the full store configuration"""
     store_id = None
@@ -110,6 +130,49 @@ def get_store_config(request: Request = None):
         return stores.get(store_id)
     
     return None
+
+
+def _get_store_log_dirs(request: Request) -> list[str]:
+    """Build candidate log directories for a store (name and id folders)."""
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+
+    store_id = get_current_store_id(request)
+
+    candidates = [
+        os.path.join(PROJECT_ROOT, "logs", store_name),
+    ]
+    if store_id:
+        candidates.append(os.path.join(PROJECT_ROOT, "logs", store_id))
+
+    unique_dirs = []
+    seen = set()
+    for candidate in candidates:
+        abs_candidate = os.path.abspath(candidate)
+        if abs_candidate in seen:
+            continue
+        seen.add(abs_candidate)
+        unique_dirs.append(abs_candidate)
+
+    return unique_dirs
+
+
+def _resolve_store_log_file(request: Request, filename: str) -> tuple[str, str]:
+    """Resolve a log filename from candidate store log directories."""
+    safe_filename = os.path.basename(filename)
+    if safe_filename != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    log_dirs = _get_store_log_dirs(request)
+
+    for logs_dir in log_dirs:
+        _, candidate_path = _safe_store_file_path(logs_dir, safe_filename)
+        if os.path.isfile(candidate_path):
+            return safe_filename, candidate_path
+
+    _, fallback_path = _safe_store_file_path(log_dirs[0], safe_filename)
+    return safe_filename, fallback_path
 
 router = APIRouter(
     prefix="/v1",
@@ -151,30 +214,38 @@ async def list_resources(request: Request):
 
 @router.get("/logs")
 async def list_store_logs(request: Request):
-    store_name = get_current_store_name(request)
-    if not store_name:
-        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
-
-    logs_dir = os.path.join(PROJECT_ROOT, "logs", store_name)
-    try:
-        filenames = [f for f in os.listdir(logs_dir) if not f.startswith('.')]
-    except FileNotFoundError:
-        return JSONResponse([])
-
     log_files = []
-    for filename in filenames:
-        file_path = os.path.join(logs_dir, filename)
-        if not os.path.isfile(file_path):
-            continue
+    seen_filenames = set()
 
-        stat = os.stat(file_path)
-        log_files.append({
-            "filename": filename,
-            "size_bytes": stat.st_size,
-            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
-            "type": os.path.splitext(filename)[1].lstrip(".").lower() or "file",
-            "_mtime": stat.st_mtime,
-        })
+    for logs_dir in _get_store_log_dirs(request):
+        try:
+            filenames = [f for f in os.listdir(logs_dir) if not f.startswith('.')]
+        except FileNotFoundError:
+            continue
+        except PermissionError:
+            raise HTTPException(
+                status_code=500,
+                detail="Cannot read logs directory. Check permissions for mounted logs volume.",
+            )
+
+        for filename in filenames:
+            if filename in seen_filenames:
+                continue
+
+            file_path = os.path.join(logs_dir, filename)
+            if not os.path.isfile(file_path):
+                continue
+
+            stat = os.stat(file_path)
+            log_files.append({
+                "filename": filename,
+                "size_bytes": stat.st_size,
+                "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+                "type": os.path.splitext(filename)[1].lstrip(".").lower() or "file",
+                "source_store_dir": os.path.basename(logs_dir),
+                "_mtime": stat.st_mtime,
+            })
+            seen_filenames.add(filename)
 
     log_files.sort(key=lambda item: item["_mtime"], reverse=True)
     for item in log_files:
@@ -189,12 +260,7 @@ async def get_store_log_content(
     filename: str = Path(..., description="The name of the log file"),
     lines: int = Query(300, ge=20, le=2000, description="Number of lines to return from the end of the file"),
 ):
-    store_name = get_current_store_name(request)
-    if not store_name:
-        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
-
-    logs_dir = os.path.join(PROJECT_ROOT, "logs", store_name)
-    _, file_path = _safe_store_file_path(logs_dir, filename)
+    _, file_path = _resolve_store_log_file(request, filename)
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Log file not found")
 
@@ -210,12 +276,7 @@ async def download_store_log(
     request: Request,
     filename: str = Path(..., description="The name of the log file to download"),
 ):
-    store_name = get_current_store_name(request)
-    if not store_name:
-        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
-
-    logs_dir = os.path.join(PROJECT_ROOT, "logs", store_name)
-    safe_filename, file_path = _safe_store_file_path(logs_dir, filename)
+    safe_filename, file_path = _resolve_store_log_file(request, filename)
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Log file not found")
 
@@ -228,12 +289,7 @@ async def delete_store_log(
     request: Request,
     filename: str = Path(..., description="The name of the log file to delete"),
 ):
-    store_name = get_current_store_name(request)
-    if not store_name:
-        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
-
-    logs_dir = os.path.join(PROJECT_ROOT, "logs", store_name)
-    safe_filename, file_path = _safe_store_file_path(logs_dir, filename)
+    safe_filename, file_path = _resolve_store_log_file(request, filename)
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Log file not found")
 
@@ -550,7 +606,8 @@ async def sync_file(
                     get_product_variants_and_sync, 
                     data_records, 
                     store_id, 
-                    sync_mode
+                    sync_mode,
+                    store_name,
                 )
                 
                 # Show progress while waiting
