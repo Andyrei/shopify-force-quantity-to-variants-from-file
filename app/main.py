@@ -28,17 +28,16 @@ app.include_router(
 )
 
 
-@app.get("/", response_class=HTMLResponse)
-def read_root(req: Request) -> HTMLResponse:
+def _build_page_context(req: Request, page: str) -> dict:
     # Load stores from config
     config = toml.load("config_stores.toml")
     stores = config.get("stores", {})
-    
-    # Try to get selected store from header (from localStorage)
+
+    # Try to get selected store from header (from localStorage-driven fetch)
     selected_store_id = req.headers.get("X-Selected-Store")
     current_store_name = ""
     current_store_display = ""
-    
+
     if selected_store_id and selected_store_id in stores:
         current_store_name = stores[selected_store_id].get("STORE_NAME", "")
         current_store_display = current_store_name.split("-")[1].upper() if "-" in current_store_name else current_store_name.upper()
@@ -48,13 +47,24 @@ def read_root(req: Request) -> HTMLResponse:
         if env_store:
             current_store_name = env_store
             current_store_display = env_store.split("-")[1].upper() if "-" in env_store else env_store.upper()
-    
-    return templates.TemplateResponse("index.html", {
+
+    return {
         "request": req,
         "store_name": current_store_display,
         "stores": stores,
         "current_store": current_store_name,
-    })
+        "page": page,
+    }
+
+
+@app.get("/", response_class=HTMLResponse)
+def read_root(req: Request) -> HTMLResponse:
+    return templates.TemplateResponse("index.html", _build_page_context(req, page="home"))
+
+
+@app.get("/logs", response_class=HTMLResponse)
+def read_logs(req: Request) -> HTMLResponse:
+    return templates.TemplateResponse("logs.html", _build_page_context(req, page="logs"))
 
 
 if __name__ == "__main__":

@@ -55,6 +55,10 @@ document.addEventListener("DOMContentLoaded", function() {
     
     let selectedFile = null;
 
+    function isDoneFilename(filename) {
+        return filename.toLowerCase().includes('__done__');
+    }
+
     // Handle file upload
     function handleUploadForm() {
         if (!uploadForm) return;
@@ -86,15 +90,19 @@ document.addEventListener("DOMContentLoaded", function() {
             list.innerHTML = "<li>No files found.</li>";
             return;
         }
-        list.innerHTML = files.map(f =>
-            `<li>
-                <span>${f}</span>
-                <div>
-                    <button class="check-btn" data-filename="${encodeURIComponent(f)}">Select & Check</button>
+        list.innerHTML = files.map(f => {
+            const done = isDoneFilename(f);
+            return `<li class="file-row ${done ? 'file-row-done' : ''}">
+                <div class="file-label-wrap">
+                    <span>${f}</span>
+                    ${done ? '<span class="file-done-badge">DONE</span>' : ''}
+                </div>
+                <div class="file-actions">
+                    ${done ? '' : `<button class="check-btn" data-filename="${encodeURIComponent(f)}">Select & Check</button>`}
                     <button class="del-btn" data-filename="${encodeURIComponent(f)}">Del</button>
                 </div>
-            </li>`
-        ).join("");
+            </li>`;
+        }).join("");
         addCheckButtonListeners();
         addDeleteButtonListeners();
     }
@@ -338,11 +346,18 @@ document.addEventListener("DOMContentLoaded", function() {
 
     // Add sync button to the specific file list item
     function addSyncButtonToListItem(filename) {
+        if (isDoneFilename(filename)) {
+            return;
+        }
+
         const listItems = list.querySelectorAll('li');
         listItems.forEach(item => {
             const span = item.querySelector('span');
             if (span && span.textContent === filename) {
-                const buttonContainer = item.querySelector('div');
+                const buttonContainer = item.querySelector('.file-actions');
+                if (!buttonContainer) {
+                    return;
+                }
                 // Remove any existing sync button first
                 const existingSyncBtn = buttonContainer.querySelector('.sync-btn');
                 if (existingSyncBtn) {
@@ -350,6 +365,9 @@ document.addEventListener("DOMContentLoaded", function() {
                 }
                 // Add new sync button after check button
                 const checkBtn = buttonContainer.querySelector('.check-btn');
+                if (!checkBtn) {
+                    return;
+                }
                 const syncBtn = document.createElement('button');
                 syncBtn.className = 'sync-btn';
                 syncBtn.setAttribute('data-filename', encodeURIComponent(filename));
@@ -727,6 +745,14 @@ document.addEventListener("DOMContentLoaded", function() {
     function buildSyncTable(data) {
         let html = ""
         const missed = buildMissingSyncList(data); // Add missing SKUs section first
+
+        if (data && data.completed_filename) {
+            html += `
+                <div style="margin: 1rem 0; padding: 1rem; border-radius: 8px; background: rgba(var(--color-primary-rgb), 0.15); border: 1px solid var(--color-primary);">
+                    <strong>DONE:</strong> source file renamed to <code>${data.completed_filename}</code>
+                </div>
+            `;
+        }
 
         if (
             !data ||

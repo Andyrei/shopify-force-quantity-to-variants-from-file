@@ -9,6 +9,12 @@
 <body>
     <header>
         <h1>FORCE QUANTITY {{ store_name }}</h1>
+        <nav>
+            <ul>
+                <li><a href="{{ request.scope.root_path }}/" class="{% if page == 'home' %}active{% endif %}">Files</a></li>
+                <li><a href="{{ request.scope.root_path }}/logs" class="{% if page == 'logs' %}active{% endif %}">Logs</a></li>
+            </ul>
+        </nav>
     </header>
     <main>
         {% block content %}{% endblock %}
@@ -17,6 +23,8 @@
         <small>&copy; 2025 PIM </small>
     </footer>
     <script>window.ROOT_PATH = "{{ request.scope.root_path }}";</script>
+    {% block page_scripts %}
     <script src="{{ request.scope.root_path }}/static/script.js"></script>
+    {% endblock %}
 </body>
 </html>

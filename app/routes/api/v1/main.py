@@ -3,8 +3,8 @@ import os
 import toml
 import json
 import asyncio
-from fastapi import APIRouter, File, Path, Request, UploadFile, HTTPException, Form, Cookie
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, File, Path, Request, UploadFile, HTTPException, Form, Query
+from fastapi.responses import JSONResponse, StreamingResponse, PlainTextResponse, FileResponse
 import pandas as pd
 
 from app.routes.api.v1.add_locations.main import get_product_variants_and_sync
@@ -13,6 +13,55 @@ from app.utilities.shopify import detect_identifier_type, get_product_variants_b
 # Load config once at module level
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
 config = toml.load(os.path.join(PROJECT_ROOT, "config_stores.toml"))
+DONE_SUFFIX = "__DONE__"
+
+
+def _is_done_file(filename: str) -> bool:
+    return DONE_SUFFIX.lower() in filename.lower()
+
+
+def _build_done_filename(filename: str, counter: int | None = None) -> str:
+    stem, ext = os.path.splitext(filename)
+    if counter is None:
+        return f"{stem}{DONE_SUFFIX}{ext}"
+    return f"{stem}{DONE_SUFFIX}{counter}{ext}"
+
+
+def _mark_file_as_done(resources_dir: str, filename: str) -> str:
+    """Rename a resource file by adding a DONE suffix to prevent re-sync."""
+    if _is_done_file(filename):
+        return filename
+
+    source_path = os.path.join(resources_dir, filename)
+    if not os.path.isfile(source_path):
+        raise FileNotFoundError(f"Source file not found: {filename}")
+
+    done_filename = _build_done_filename(filename)
+    done_path = os.path.join(resources_dir, done_filename)
+
+    counter = 1
+    while os.path.exists(done_path):
+        done_filename = _build_done_filename(filename, counter=counter)
+        done_path = os.path.join(resources_dir, done_filename)
+        counter += 1
+
+    os.rename(source_path, done_path)
+    return done_filename
+
+
+def _safe_store_file_path(base_dir: str, filename: str) -> tuple[str, str]:
+    """Return a safe filename and absolute file path within the given base directory."""
+    safe_filename = os.path.basename(filename)
+    if safe_filename != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    abs_base_dir = os.path.abspath(base_dir)
+    abs_file_path = os.path.abspath(os.path.join(abs_base_dir, safe_filename))
+
+    if not abs_file_path.startswith(abs_base_dir + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+
+    return safe_filename, abs_file_path
 
 def get_current_store_name(request: Request = None):
     """Get current store name from cookie, header, or environment variable"""
@@ -94,9 +143,105 @@ async def list_resources(request: Request):
     try:
         files = os.listdir(resources_dir)
         files = [f for f in files if not f.startswith('.')]
+        files = sorted(files, key=lambda f: (_is_done_file(f), f.lower()))
     except FileNotFoundError:
         files = []
     return JSONResponse(files)
+
+
+@router.get("/logs")
+async def list_store_logs(request: Request):
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+
+    logs_dir = os.path.join(PROJECT_ROOT, "logs", store_name)
+    try:
+        filenames = [f for f in os.listdir(logs_dir) if not f.startswith('.')]
+    except FileNotFoundError:
+        return JSONResponse([])
+
+    log_files = []
+    for filename in filenames:
+        file_path = os.path.join(logs_dir, filename)
+        if not os.path.isfile(file_path):
+            continue
+
+        stat = os.stat(file_path)
+        log_files.append({
+            "filename": filename,
+            "size_bytes": stat.st_size,
+            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+            "type": os.path.splitext(filename)[1].lstrip(".").lower() or "file",
+            "_mtime": stat.st_mtime,
+        })
+
+    log_files.sort(key=lambda item: item["_mtime"], reverse=True)
+    for item in log_files:
+        item.pop("_mtime", None)
+
+    return JSONResponse(log_files)
+
+
+@router.get("/logs/content/{filename}")
+async def get_store_log_content(
+    request: Request,
+    filename: str = Path(..., description="The name of the log file"),
+    lines: int = Query(300, ge=20, le=2000, description="Number of lines to return from the end of the file"),
+):
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+
+    logs_dir = os.path.join(PROJECT_ROOT, "logs", store_name)
+    _, file_path = _safe_store_file_path(logs_dir, filename)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Log file not found")
+
+    with open(file_path, "r", encoding="utf-8", errors="replace") as file_obj:
+        content_lines = file_obj.readlines()
+
+    preview = "".join(content_lines[-lines:])
+    return PlainTextResponse(preview)
+
+
+@router.get("/logs/download/{filename}")
+async def download_store_log(
+    request: Request,
+    filename: str = Path(..., description="The name of the log file to download"),
+):
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+
+    logs_dir = os.path.join(PROJECT_ROOT, "logs", store_name)
+    safe_filename, file_path = _safe_store_file_path(logs_dir, filename)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Log file not found")
+
+    media_type = "text/csv" if safe_filename.lower().endswith(".csv") else "text/plain"
+    return FileResponse(file_path, media_type=media_type, filename=safe_filename)
+
+
+@router.delete("/logs/{filename}")
+async def delete_store_log(
+    request: Request,
+    filename: str = Path(..., description="The name of the log file to delete"),
+):
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+
+    logs_dir = os.path.join(PROJECT_ROOT, "logs", store_name)
+    safe_filename, file_path = _safe_store_file_path(logs_dir, filename)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Log file not found")
+
+    try:
+        os.remove(file_path)
+        return {"detail": f"Log file '{safe_filename}' deleted successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting log file: {e}")
 
 
 @router.delete("/resources/{filename}")
@@ -350,6 +495,13 @@ async def sync_file(
         raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
     
     resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
+
+    if _is_done_file(filename):
+        raise HTTPException(
+            status_code=400,
+            detail="This file is already marked as DONE and cannot be synced again.",
+        )
+
     file_path = os.path.join(resources_dir, filename)
 
     if not os.path.isfile(file_path):
@@ -413,6 +565,19 @@ async def sync_file(
                 sync_result, missing_rows, duplicate_rows, found_refs = future.result()
             
             print(f"DEBUG: Sync completed. Result: {type(sync_result)}, Missing: {len(missing_rows)}, Found: {len(found_refs)}")
+
+            completed_filename = None
+            has_sync_error = isinstance(sync_result, dict) and bool(sync_result.get("error"))
+            sync_success = bool(sync_result) and not missing_rows and not duplicate_rows and not has_sync_error
+
+            if sync_success:
+                try:
+                    completed_filename = _mark_file_as_done(resources_dir, filename)
+                    if completed_filename != filename:
+                        yield f"data: {json.dumps({'type': 'status', 'message': f'🏁 File marked as DONE: {completed_filename}'})}\n\n"
+                        await asyncio.sleep(0.1)
+                except Exception as rename_error:
+                    print(f"ERROR: Could not mark file as DONE: {rename_error}")
             
             # Show completion progress
             if sync_result:
@@ -431,15 +596,23 @@ async def sync_file(
                 await asyncio.sleep(0.1)
             
             # Send final result
+            if sync_success:
+                final_detail = f"File '{completed_filename or filename}' syncing completed. Marked as DONE."
+            elif missing_rows or duplicate_rows:
+                final_detail = f"Matching variants found missing in '{filename}'"
+            else:
+                final_detail = f"File '{filename}' sync completed with warnings."
+
             result_data = {
                 'type': 'complete',
-                'detail': f"File '{filename}' syncing completed!" if sync_result and not missing_rows else f"Matching variants found missing in '{filename}'",
+                'detail': final_detail,
                 'total_records': total_records,
                 'sync_mode': sync_mode,
                 'data': sync_result,
                 'missing_rows': missing_rows,
                 'duplicate_rows': duplicate_rows,
-                'found_refs': list(found_refs) if found_refs else []
+                'found_refs': list(found_refs) if found_refs else [],
+                'completed_filename': completed_filename,
             }
             yield f"data: {json.dumps(result_data)}\n\n"
             
