@@ -31,26 +31,7 @@ document.addEventListener("DOMContentLoaded", function() {
         logsSection.style.display = "block";
     }
 
-    const storeBoxes = document.querySelectorAll(".store-box");
-    storeBoxes.forEach((box) => {
-        if (selectedStore && box.dataset.storeId === selectedStore) {
-            box.classList.add("active");
-            const badge = box.querySelector(".active-badge");
-            if (badge) {
-                badge.style.display = "inline-block";
-            }
-        }
-
-        box.addEventListener("click", function() {
-            const storeName = this.dataset.store;
-            const storeId = this.dataset.storeId;
-
-            localStorage.setItem("selectedStore", storeId);
-            localStorage.setItem("selectedStoreName", storeName);
-
-            window.location.reload();
-        });
-    });
+    // Store selector is handled by script.js (loaded in base.html)
 
     function formatSize(bytes) {
         if (!Number.isFinite(bytes) || bytes < 1024) {

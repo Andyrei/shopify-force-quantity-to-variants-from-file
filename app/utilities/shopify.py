@@ -1,6 +1,7 @@
 import os
 import shopify
 import json
+import asyncio
 import toml
 from pathlib import Path
 from datetime import datetime
@@ -10,33 +11,47 @@ from shopify.base import ShopifyConnection
 RESOURCE -> https://github.com/Shopify/shopify_python_api
 """
 
-# Load config once at module level
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-config = toml.load(PROJECT_ROOT / "config_stores.toml")
 
 def get_store_credentials(store_id: str = None) -> dict:
     """
-    Get store credentials from config based on store_id.
+    Get store credentials from SQLite DB based on store_id.
     Falls back to environment variables if store_id is not provided.
     """
     if store_id:
-        stores = config.get("stores", {})
-        if store_id in stores:
-            store_config = stores[store_id]
-            return {
-                "access_token": store_config.get("ACCESS_TOKEN"),
-                "base_url": f"{store_config.get('STORE_NAME')}.myshopify.com",
-                "api_version": store_config.get("API_VERSION", "2025-04")
-            }
-    
-    # Fallback to environment variables
+        try:
+            from app.database import get_store_credentials as db_get_credentials
+            creds = asyncio.run(db_get_credentials(store_id))
+            if creds:
+                return {
+                    "access_token": creds.get("ACCESS_TOKEN"),
+                    "base_url": f"{creds.get('STORE_NAME')}.myshopify.com",
+                    "api_version": creds.get("API_VERSION", "2025-10")
+                }
+        except Exception as e:
+            print(f"DEBUG: DB not available, falling back to TOML: {e}")
+
+    try:
+        config = toml.load(PROJECT_ROOT / "config_stores.toml")
+        if store_id:
+            stores = config.get("stores", {})
+            if store_id in stores:
+                store_config = stores[store_id]
+                return {
+                    "access_token": store_config.get("ACCESS_TOKEN"),
+                    "base_url": f"{store_config.get('STORE_NAME')}.myshopify.com",
+                    "api_version": store_config.get("API_VERSION", "2025-10")
+                }
+    except Exception as e:
+        print(f"DEBUG: TOML not available: {e}")
+
     access_token = os.environ.get("ACCESS_TOKEN")
     store_name = os.environ.get("STORE_NAME")
     if access_token and store_name:
         return {
             "access_token": access_token,
             "base_url": f"{store_name}.myshopify.com",
-            "api_version": os.environ.get("API_VERSION", "2025-04")
+            "api_version": os.environ.get("API_VERSION", "2025-10")
         }
     
     return None

@@ -2,19 +2,77 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>FORCE QUANTITY {{ store_name }}</title>
+    <title>FORCE QUANTITY {% if store_name %}{{ store_name }}{% endif %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="{{ request.scope.root_path }}/static/style.css" rel="stylesheet">
 </head>
 <body>
     <header>
-        <h1>FORCE QUANTITY {{ store_name }}</h1>
-        <nav>
-            <ul>
-                <li><a href="{{ request.scope.root_path }}/" class="{% if page == 'home' %}active{% endif %}">Files</a></li>
-                <li><a href="{{ request.scope.root_path }}/logs" class="{% if page == 'logs' %}active{% endif %}">Logs</a></li>
-            </ul>
-        </nav>
+        <div class="header-top">
+            {% block header_store_select %}
+            <div class="header-store-select">
+                <select id="store-select" onchange="handleStoreChange(this)">
+                    <option value="">-- Select Store --</option>
+                    {% for store_id, store_config in stores.items() %}
+                    <option value="{{ store_id }}" data-store-name="{% if store_config.title %}{{ store_config.title }}{% else %}{{ store_config.store_name }}{% endif %}">{% if store_config.title %}{{ store_config.title }}{% else %}{{ store_config.store_name }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <script>
+                function handleStoreChange(select) {
+                    const storeId = select.value;
+                    if (!storeId) {
+                        localStorage.removeItem('selectedStore');
+                        localStorage.removeItem('selectedStoreName');
+                        window.location.href = window.location.pathname;
+                        return;
+                    }
+                    const storeName = select.options[select.selectedIndex].textContent.trim();
+                    localStorage.setItem('selectedStore', storeId);
+                    localStorage.setItem('selectedStoreName', storeName);
+                    window.location.href = window.location.pathname + '?store=' + storeId;
+                }
+
+                // Initialize on page load - check URL first, then localStorage
+                (function() {
+                    const storeSelect = document.getElementById('store-select');
+                    if (!storeSelect) return;
+
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const storeFromUrl = urlParams.get('store');
+                    const storedStore = localStorage.getItem('selectedStore');
+
+                    if (storeFromUrl) {
+                        // URL has store - use it
+                        storeSelect.value = storeFromUrl;
+                        localStorage.setItem('selectedStore', storeFromUrl);
+                        const option = storeSelect.options[storeSelect.selectedIndex];
+                        if (option) localStorage.setItem('selectedStoreName', option.textContent.trim());
+                        // Clean URL but DON'T redirect again
+                        history.replaceState({}, '', window.location.pathname);
+                    } else if (storedStore) {
+                        // No URL but have localStorage - redirect to add it
+                        window.location.href = window.location.pathname + '?store=' + storedStore;
+                    }
+                })();
+            </script>
+            {% endblock %}
+        </div>
+        <div class="header-middle">
+            {% if store_name %}
+            <span class="store-badge">{{ store_name }}</span>
+            {% endif %}
+            <h1>FORCE QUANTITY</h1>
+            <nav>
+                <ul>
+                    <li><a href="{{ request.scope_root_path }}/" class="{% if page == 'home' %}active{% endif %}">Files</a></li>
+                    <li><a href="{{ request.scope_root_path }}/logs" class="{% if page == 'logs' %}active{% endif %}">Logs</a></li>
+                </ul>
+            </nav>
+        </div>
+        <div class="header-bottom">
+            <span class="api-version-display">{% if api_version %}API Version: {{ api_version }}{% endif %}</span>
+        </div>
     </header>
     <main>
         {% block content %}{% endblock %}

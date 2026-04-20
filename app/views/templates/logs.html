@@ -2,22 +2,50 @@
 
 {% block title %}Store Logs{% endblock %}
 
+{% block header_store_select %}
+<div class="header-store-select">
+    <select id="store-select" onchange="handleStoreChange(this)">
+        <option value="">-- Select Store --</option>
+        {% for store_id, store_config in stores.items() %}
+        <option value="{{ store_id }}" data-store-name="{% if store_config.title %}{{ store_config.title }}{% else %}{{ store_config.store_name }}{% endif %}">{% if store_config.title %}{{ store_config.title }}{% else %}{{ store_config.store_name }}{% endif %}</option>
+        {% endfor %}
+    </select>
+</div>
+<script>
+function handleStoreChange(select) {
+    const storeId = select.value;
+    if (!storeId) {
+        localStorage.removeItem('selectedStore');
+        localStorage.removeItem('selectedStoreName');
+        window.location.href = window.location.pathname;
+        return;
+    }
+    const storeName = select.options[select.selectedIndex].textContent.trim();
+    localStorage.setItem('selectedStore', storeId);
+    localStorage.setItem('selectedStoreName', storeName);
+    window.location.href = window.location.pathname + '?store=' + storeId;
+}
+(function() {
+    const storeSelect = document.getElementById('store-select');
+    if (!storeSelect) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const storeFromUrl = urlParams.get('store');
+    const storedStore = localStorage.getItem('selectedStore');
+    if (storeFromUrl) {
+        storeSelect.value = storeFromUrl;
+        localStorage.setItem('selectedStore', storeFromUrl);
+        const option = storeSelect.options[storeSelect.selectedIndex];
+        if (option) localStorage.setItem('selectedStoreName', option.textContent.trim());
+        history.replaceState({}, '', window.location.pathname);
+    } else if (storedStore) {
+        window.location.href = window.location.pathname + '?store=' + storedStore;
+    }
+})();
+</script>
+{% endblock %}
+
 {% block content %}
 <div id="logs-page" data-has-store="{{ '1' if current_store else '0' }}">
-<div class="card">
-    <h2>Select Store</h2>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1em; margin-top: 1em;">
-        {% for store_id, store_config in stores.items() %}
-        <div class="store-box"
-             data-store="{{ store_config.STORE_NAME }}"
-             data-store-id="{{ store_id }}">
-            <h3>{{ store_config.TITLE }}</h3>
-            <p style="font-size: 0.9em; color: #888;">{{ store_config.STORE_NAME }}</p>
-            <span class="active-badge" style="display: none;">Active</span>
-        </div>
-        {% endfor %}
-    </div>
-</div>
 
 <div class="card{% if not current_store %} is-hidden{% endif %}" id="logs-section">
     <div class="logs-toolbar">

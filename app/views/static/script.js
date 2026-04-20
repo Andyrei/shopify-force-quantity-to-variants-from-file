@@ -1,15 +1,15 @@
-document.addEventListener("DOMContentLoaded", function() {
+document.addEventListener("DOMContentLoaded", function () {
     const uploadForm = document.getElementById("UploadFile");
     const responseBox = document.querySelector("pre.box");
     const list = document.getElementById("resources-list");
     const syncConfig = document.getElementById("sync-config");
-    
+
     // Get selected store from localStorage
     const selectedStore = localStorage.getItem('selectedStore');
-    
+
     // Override fetch to add store header and root path prefix
     const originalFetch = window.fetch;
-    window.fetch = function(...args) {
+    window.fetch = function (...args) {
         let [url, options = {}] = args;
         if (typeof url === 'string' && url.startsWith('/') && window.ROOT_PATH) {
             url = window.ROOT_PATH + url;
@@ -22,7 +22,7 @@ document.addEventListener("DOMContentLoaded", function() {
         }
         return originalFetch(url, options);
     };
-    
+
     // Update storeSelected based on localStorage
     if (selectedStore) {
         window.storeSelected = true;
@@ -30,39 +30,28 @@ document.addEventListener("DOMContentLoaded", function() {
         document.getElementById('files-section').style.display = 'block';
         document.getElementById('upload-section').style.display = 'block';
     }
-    
-    // Store selector functionality
-    const storeBoxes = document.querySelectorAll(".store-box");
-    storeBoxes.forEach(box => {
-        box.addEventListener("click", function() {
-            const storeName = this.dataset.store;
-            const storeId = this.dataset.storeId;
-            const storeTitle = this.querySelector('h3').textContent;
-            
-            // Save selected store to localStorage
-            localStorage.setItem('selectedStore', storeId);
-            localStorage.setItem('selectedStoreName', storeName);
-            
-            // Reload the page to apply the store selection
-            window.location.reload();
-        });
-    });
-    
+
+    // Store selector is now handled by inline script in base.html template
+
     // These will be updated when the HTML is reset
     let locationField = document.getElementById("location-field");
     let saleChannelField = document.getElementById("sale-channel-field");
     let saveAndSyncBtn = document.getElementById("save-and-sync");
-    
+
     let selectedFile = null;
 
     function isDoneFilename(filename) {
         return filename.toLowerCase().includes('__done__');
     }
 
+    function getSyncButtonText(filename) {
+        return isDoneFilename(filename) ? '↻ Re-sync' : '▶ Sync';
+    }
+
     // Handle file upload
     function handleUploadForm() {
         if (!uploadForm) return;
-        uploadForm.addEventListener("submit", async function(e) {
+        uploadForm.addEventListener("submit", async function (e) {
             e.preventDefault();
             responseBox.textContent = "Uploading...";
             try {
@@ -72,7 +61,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 });
                 const result = await res.json();
                 console.log(result);
-                
+
                 responseBox.textContent = res.ok
                     ? JSON.stringify(result, null, 2)
                     : `Response error: ${res.status} - ${result.detail}`;
@@ -93,12 +82,12 @@ document.addEventListener("DOMContentLoaded", function() {
         list.innerHTML = files.map(f => {
             const done = isDoneFilename(f);
             return `<li class="file-row ${done ? 'file-row-done' : ''}">
+                ${done ? '<span class="file-done-badge">DONE</span>' : ''}
                 <div class="file-label-wrap">
                     <span>${f}</span>
-                    ${done ? '<span class="file-done-badge">DONE</span>' : ''}
                 </div>
                 <div class="file-actions">
-                    ${done ? '' : `<button class="check-btn" data-filename="${encodeURIComponent(f)}">Select & Check</button>`}
+                    <button class="check-btn" data-filename="${encodeURIComponent(f)}">Select & Check</button>
                     <button class="download-btn" data-filename="${encodeURIComponent(f)}">Download</button>
                     <button class="del-btn" data-filename="${encodeURIComponent(f)}">Delete</button>
                 </div>
@@ -111,7 +100,7 @@ document.addEventListener("DOMContentLoaded", function() {
     // Add event listeners to download buttons
     function addDownloadButtonListeners() {
         list.querySelectorAll(".download-btn").forEach(btn => {
-            btn.addEventListener("click", async function() {
+            btn.addEventListener("click", async function () {
                 const filename = decodeURIComponent(this.getAttribute("data-filename"));
                 const url = `/api/v1/resources/${encodeURIComponent(filename)}?download=1`;
                 const selectedStore = localStorage.getItem('selectedStore');
@@ -145,23 +134,18 @@ document.addEventListener("DOMContentLoaded", function() {
         try {
             // Reset the sync config panel first
             resetSyncConfig();
-            
+
             const res = await fetch(`/api/v1/check/${filename}`, { method: "GET" });
             const data = await res.json();
-            
+
             if (res.ok) {
                 selectedFile = filename;
-                
+
                 if (data.ready_to_sync) {
                     // File has all required data and NO errors/warnings - show sync button in list
                     showSyncModeSelection();
                     addSyncButtonToListItem(filename);
-                    responseBox.innerHTML = `
-                        <div style="color: var(--color-primary);">
-                            ✓ File "${filename}" is ready to sync!<br>
-                            Found all required columns: ${data.columns.join(", ")}<br>
-                            All ${data.total_skus || 0} SKUs verified in Shopify.
-                        </div>
+                    responseBox.innerHTML = `<div style="color: var(--color-primary);">✓ File "${filename}" is ready to sync!<br>Found all required columns: ${data.columns.join(", ")}<br>All ${data.total_skus || 0} SKUs verified in Shopify.</div>
                     `;
                 } else {
                     // File has errors or warnings - DO NOT allow syncing
@@ -169,12 +153,7 @@ document.addEventListener("DOMContentLoaded", function() {
                     if (data.missing_fields && data.missing_fields.length > 0) {
                         // File is missing required columns
                         showMissingFieldsConfig(data);
-                        responseBox.innerHTML = `
-                            <div style="color: var(--color-highlight);">
-                                ⚠ File "${filename}" is missing required columns.<br>
-                                Please fill in the missing information below.
-                            </div>
-                        `;
+                        responseBox.innerHTML = `<div style="color: var(--color-highlight);">⚠ File "${filename}" is missing required columns.<br>Please fill in the missing information below.</div>`;
                     } else if ((data.missing_rows && data.missing_rows.length > 0) || (data.duplicate_rows && data.duplicate_rows.length > 0)) {
                         // File has missing or duplicate SKUs - Show report ONLY, NO sync button
                         responseBox.innerHTML = `
@@ -268,13 +247,13 @@ document.addEventListener("DOMContentLoaded", function() {
                 </button>
             </div>
         `;
-        
+
         // Re-get references to the elements since we reset the HTML
         updateElementReferences();
-        
+
         // Hide the entire panel
         syncConfig.style.display = "none";
-        
+
         // Make sure all fields are hidden
         if (locationField) locationField.style.display = "none";
         if (saleChannelField) saleChannelField.style.display = "none";
@@ -288,11 +267,11 @@ document.addEventListener("DOMContentLoaded", function() {
             const newLocationField = document.getElementById("location-field");
             const newSaleChannelField = document.getElementById("sale-channel-field");
             const newSaveAndSyncBtn = document.getElementById("save-and-sync");
-            
+
             if (newLocationField) locationField = newLocationField;
             if (newSaleChannelField) saleChannelField = newSaleChannelField;
             if (newSaveAndSyncBtn) saveAndSyncBtn = newSaveAndSyncBtn;
-            
+
             console.log("Updated element references:", {
                 locationField: !!locationField,
                 saleChannelField: !!saleChannelField,
@@ -306,10 +285,10 @@ document.addEventListener("DOMContentLoaded", function() {
         // Wait for element references to be updated
         setTimeout(() => {
             syncConfig.style.display = "block";
-            
+
             // Update element references in case they were reset
             updateElementReferences();
-            
+
             // Wait a bit more for references to update, then show/hide fields
             setTimeout(() => {
                 // Show/hide fields based on what's missing
@@ -318,13 +297,13 @@ document.addEventListener("DOMContentLoaded", function() {
                 } else {
                     if (locationField) locationField.style.display = "none";
                 }
-                
+
                 if (fileData.missing_fields.includes("sale_channel")) {
                     if (saleChannelField) saleChannelField.style.display = "block";
                 } else {
                     if (saleChannelField) saleChannelField.style.display = "none";
                 }
-                
+
                 if (saveAndSyncBtn) {
                     saveAndSyncBtn.style.display = "block";
                     saveAndSyncBtn.onclick = () => saveToFileAndSync(selectedFile);
@@ -359,13 +338,13 @@ document.addEventListener("DOMContentLoaded", function() {
             <input type="hidden" id="selected-sync-mode" value="adjust">
         `;
         syncConfig.style.display = "block";
-        
+
         // Add sync mode button listeners
         const syncModeButtons = document.querySelectorAll('.sync-mode-btn');
         const selectedModeInput = document.getElementById('selected-sync-mode');
-        
+
         syncModeButtons.forEach(btn => {
-            btn.addEventListener('click', function() {
+            btn.addEventListener('click', function () {
                 syncModeButtons.forEach(b => {
                     b.classList.remove('active');
                     b.style.borderColor = '#444';
@@ -378,15 +357,30 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     // Add sync button to the specific file list item
-    function addSyncButtonToListItem(filename) {
-        if (isDoneFilename(filename)) {
-            return;
-        }
-
+function addSyncButtonToListItem(filename) {
+        const decodedFilename = decodeURIComponent(filename);
         const listItems = list.querySelectorAll('li');
+        
         listItems.forEach(item => {
             const span = item.querySelector('span');
-            if (span && span.textContent === filename) {
+            const checkBtn = item.querySelector('.check-btn');
+            
+            // Try multiple matching approaches
+            let matchFound = false;
+            
+            // Check 1: Exact text match
+            if (span && span.textContent === decodedFilename) {
+                matchFound = true;
+            }
+            // Check 2: Check button data-filename attribute
+            if (!matchFound && checkBtn) {
+                const btnFilename = decodeURIComponent(checkBtn.getAttribute('data-filename') || '');
+                if (btnFilename === decodedFilename || btnFilename === filename) {
+                    matchFound = true;
+                }
+            }
+            
+            if (matchFound) {
                 const buttonContainer = item.querySelector('.file-actions');
                 if (!buttonContainer) {
                     return;
@@ -396,21 +390,25 @@ document.addEventListener("DOMContentLoaded", function() {
                 if (existingSyncBtn) {
                     existingSyncBtn.remove();
                 }
-                // Add new sync button after check button
-                const checkBtn = buttonContainer.querySelector('.check-btn');
+                
+                // If check button doesn't exist, create one or add sync button
                 if (!checkBtn) {
                     return;
                 }
+                
                 const syncBtn = document.createElement('button');
                 syncBtn.className = 'sync-btn';
-                syncBtn.setAttribute('data-filename', encodeURIComponent(filename));
-                syncBtn.textContent = '▶ Sync';
-                syncBtn.style.cssText = 'background: var(--color-primary); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-left: 5px;';
+                syncBtn.setAttribute('data-filename', encodeURIComponent(decodedFilename));
+                syncBtn.textContent = getSyncButtonText(decodedFilename);
+                const isResync = isDoneFilename(decodedFilename);
+                syncBtn.style.cssText = isResync 
+                    ? 'background: var(--color-error); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-left: 5px; font-weight: bold;'
+                    : 'background: var(--color-highlight); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-left: 5px;';
                 syncBtn.onclick = () => {
                     const mode = document.getElementById('selected-sync-mode')?.value || 'adjust';
-                    syncFile(filename, mode);
+                    syncFile(decodedFilename, mode);
                 };
-                checkBtn.insertAdjacentElement('afterend', syncBtn);
+                checkBtn.insertAdjacentElement('beforebegin', syncBtn);
             }
         });
     }
@@ -419,10 +417,10 @@ document.addEventListener("DOMContentLoaded", function() {
     async function saveToFileAndSync(filename) {
         // Update element references in case they were reset
         updateElementReferences();
-        
+
         const locationId = document.getElementById("location-id").value.trim();
         const saleChannel = document.getElementById("sale-channel").value.trim();
-        
+
         // Validate required fields
         let missingFields = [];
         if (locationField.style.display !== "none" && !locationId) {
@@ -431,26 +429,26 @@ document.addEventListener("DOMContentLoaded", function() {
         if (saleChannelField.style.display !== "none" && !saleChannel) {
             missingFields.push("Sale Channel");
         }
-        
+
         if (missingFields.length > 0) {
             alert(`Please fill in: ${missingFields.join(", ")}`);
             return;
         }
-        
+
         saveAndSyncBtn.disabled = true;
         saveAndSyncBtn.textContent = "Saving & Syncing...";
-        
+
         try {
             // Update file with missing data
             const formData = new FormData();
             if (locationId) formData.append("location_id", locationId);
             if (saleChannel) formData.append("sale_channel", saleChannel);
-            
+
             const updateRes = await fetch(`/api/v1/update-file/${filename}`, {
                 method: "POST",
                 body: formData
             });
-            
+
             if (updateRes.ok) {
                 // File updated successfully, now show sync mode selection
                 // Re-check the file to show sync UI
@@ -478,7 +476,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 'replace': 'Replacing',
                 'tabula_rasa': 'Resetting & Setting'
             };
-            
+
             // Show initial loading message
             responseBox.innerHTML = `
                 <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 40px;">
@@ -487,21 +485,23 @@ document.addEventListener("DOMContentLoaded", function() {
                     <p style="color: #bdbdbd; font-size: 0.9rem;">Preparing sync...</p>
                 </div>
             `;
-            
+
+            document.getElementById('upload-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
             // Disable inline sync button
             const inlineSyncBtn = list.querySelector(`button.sync-btn[data-filename="${encodeURIComponent(filename)}"]`);
             if (inlineSyncBtn) {
                 inlineSyncBtn.disabled = true;
                 inlineSyncBtn.textContent = 'Syncing...';
             }
-            
+
             // Get selected store from localStorage
             const selectedStore = localStorage.getItem('selectedStore');
-            
+
             // Create FormData for the POST request
             const formData = new FormData();
             formData.append('sync_mode', syncMode);
-            
+
             // We can't use EventSource with POST, so we'll use fetch with streaming
             const response = await fetch(`/api/v1/sync/${filename}`, {
                 method: 'POST',
@@ -510,43 +510,43 @@ document.addEventListener("DOMContentLoaded", function() {
                 } : {},
                 body: formData
             });
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
-            
+
             console.log('🚀 Starting SSE stream reading...');
-            
+
             while (true) {
-                const {done, value} = await reader.read();
-                
+                const { done, value } = await reader.read();
+
                 if (done) {
                     console.log('✅ SSE stream completed');
                     break;
                 }
-                
-                buffer += decoder.decode(value, {stream: true});
+
+                buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
-                
+
                 // Keep the last incomplete line in the buffer
                 buffer = lines.pop() || '';
-                
+
                 for (const line of lines) {
                     if (line.trim() === '') continue; // Skip empty lines
-                    
+
                     console.log('📥 Raw line:', line);
-                    
+
                     if (line.startsWith('data: ')) {
                         const jsonStr = line.substring(6);
                         console.log('📦 JSON string:', jsonStr);
                         try {
                             const data = JSON.parse(jsonStr);
                             console.log('✨ Parsed data:', data);
-                            
+
                             if (data.type === 'start') {
                                 responseBox.innerHTML = `
                                     <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 40px;">
@@ -593,19 +593,19 @@ document.addEventListener("DOMContentLoaded", function() {
                             } else if (data.type === 'status') {
                                 const progressCount = document.getElementById('progress-count');
                                 const progressBar = document.getElementById('progress-bar');
-                                
+
                                 console.log('Status update:', data.message);
                                 console.log('Progress bar element:', progressBar);
-                                
+
                                 if (progressCount) {
                                     progressCount.innerHTML = `<span style="font-size: 1.3rem;">${data.message}</span>`;
                                 }
-                                
+
                                 // Update progress bar and steps based on message
                                 const message = data.message.toLowerCase();
                                 let currentStep = null;
                                 let progress = 0;
-                                
+
                                 if (message.includes('loading')) {
                                     currentStep = 'loading';
                                     progress = 20;
@@ -637,9 +637,9 @@ document.addEventListener("DOMContentLoaded", function() {
                                     currentStep = 'saving';
                                     progress = 95;
                                 }
-                                
+
                                 console.log('Progress:', progress + '%', 'Current step:', currentStep);
-                                
+
                                 // Update active step
                                 if (currentStep) {
                                     document.querySelectorAll('.progress-step').forEach(step => {
@@ -654,7 +654,7 @@ document.addEventListener("DOMContentLoaded", function() {
                                         }
                                     }
                                 }
-                                
+
                                 // Animate progress bar
                                 if (progressBar && progress > 0) {
                                     console.log('Setting progress bar width to:', progress + '%');
@@ -699,7 +699,7 @@ document.addEventListener("DOMContentLoaded", function() {
                     }
                 }
             }
-            
+
         } catch (err) {
             console.error('❌ Sync error:', err);
             responseBox.textContent = "Sync error: " + err;
@@ -737,7 +737,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     // Make this function global so it can be called from inline onclick
-    window.copyMissingSKUs = function(missing_skus) {
+    window.copyMissingSKUs = function (missing_skus) {
         const skus = missing_skus || [];
         const btn = document.querySelector(".copy-all-btn");
         const originalText = btn.querySelector("span").innerHTML;
@@ -753,14 +753,14 @@ document.addEventListener("DOMContentLoaded", function() {
             alert("Failed to copy SKUs: " + err);
         });
     }
-    
+
     // Function to copy error SKUs (missing or duplicate) from the check report
-    window.copyErrorSKUs = function(skus_array, type) {
+    window.copyErrorSKUs = function (skus_array, type) {
         const skus = skus_array || [];
         const btnClass = type === "missing" ? ".copy-missing-btn" : ".copy-duplicate-btn";
         const btn = document.querySelector(btnClass);
         if (!btn) return;
-        
+
         const originalText = btn.querySelector("span").innerHTML;
 
         if (skus.length === 0) return;
@@ -774,17 +774,13 @@ document.addEventListener("DOMContentLoaded", function() {
             alert("Failed to copy SKUs: " + err);
         });
     }
-    
+
     function buildSyncTable(data) {
         let html = ""
         const missed = buildMissingSyncList(data); // Add missing SKUs section first
 
         if (data && data.completed_filename) {
-            html += `
-                <div style="margin: 1rem 0; padding: 1rem; border-radius: 8px; background: rgba(var(--color-primary-rgb), 0.15); border: 1px solid var(--color-primary);">
-                    <strong>DONE:</strong> source file renamed to <code>${data.completed_filename}</code>
-                </div>
-            `;
+            html += `<div style="margin: 1rem 0; padding: 1rem; border-radius: 8px; background: rgba(var(--color-primary-rgb), 0.15); border: 1px solid var(--color-primary);"> <strong>DONE:</strong> source file renamed to <code>${data.completed_filename}</code></div>`;
         }
 
         if (
@@ -825,7 +821,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 const quantityObj = loc.quantities.find(q => q.name === "available");
                 const quantity = quantityObj ? quantityObj.quantity : "-";
                 let delta = '-';
-                if(change.location.id === loc.location.id ){
+                if (change.location.id === loc.location.id) {
                     delta = change.delta
                 }
                 html += `<tr>
@@ -846,13 +842,13 @@ document.addEventListener("DOMContentLoaded", function() {
     // Add event listeners to check buttons
     function addCheckButtonListeners() {
         list.querySelectorAll(".check-btn").forEach(btn => {
-            btn.addEventListener("click", async function() {
+            btn.addEventListener("click", async function () {
                 const filename = decodeURIComponent(this.getAttribute("data-filename"));
                 this.disabled = true;
                 this.textContent = "Checking...";
-                
+
                 await checkFileStructure(filename);
-                
+
                 this.textContent = "Select & Check";
                 this.disabled = false;
             });
@@ -862,7 +858,7 @@ document.addEventListener("DOMContentLoaded", function() {
     // Add event listeners to delete buttons
     function addDeleteButtonListeners() {
         list.querySelectorAll(".del-btn").forEach(btn => {
-            btn.addEventListener("click", async function() {
+            btn.addEventListener("click", async function () {
                 const filename = this.getAttribute("data-filename");
                 if (confirm(`Delete file "${decodeURIComponent(filename)}"?`)) {
                     await deleteFile(this, filename);
@@ -907,7 +903,7 @@ document.addEventListener("DOMContentLoaded", function() {
         if (!window.storeSelected) {
             return;
         }
-        
+
         try {
             const res = await fetch("/api/v1/resources");
             if (res.ok) {

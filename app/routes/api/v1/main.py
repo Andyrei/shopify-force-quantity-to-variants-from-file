@@ -1,8 +1,7 @@
+import asyncio
 from datetime import datetime
 import os
-import toml
 import json
-import asyncio
 from fastapi import APIRouter, File, Path, Request, UploadFile, HTTPException, Form, Query
 from fastapi.responses import JSONResponse, StreamingResponse, PlainTextResponse, FileResponse
 import pandas as pd
@@ -10,10 +9,19 @@ import pandas as pd
 from app.routes.api.v1.add_locations.main import get_product_variants_and_sync
 from app.utilities.shopify import detect_identifier_type, get_product_variants_by_identifier
 
-# Load config once at module level
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
-config = toml.load(os.path.join(PROJECT_ROOT, "config_stores.toml"))
 DONE_SUFFIX = "__DONE__"
+
+
+def _get_stores_config(request: Request = None) -> dict:
+    if request and hasattr(request.app.state, "stores"):
+        return request.app.state.stores
+    return {}
+
+
+def get_store_config_sync(request: Request, store_id: str):
+    stores = _get_stores_config(request)
+    return stores.get(store_id)
 
 
 def _is_done_file(filename: str) -> bool:
@@ -67,21 +75,18 @@ def get_current_store_name(request: Request = None):
     """Get current store name from cookie, header, or environment variable"""
     store_id = None
     
-    # Try to get from custom header (sent by JavaScript)
     if request:
         store_id = request.headers.get("X-Selected-Store")
     
-    # Fallback to environment variable
     if not store_id:
         env_store = os.getenv("STORE_NAME")
         if env_store:
             return env_store.split("-")[1] if "-" in env_store else env_store
     
-    # Get store name from config using store_id
     if store_id:
-        stores = config.get("stores", {})
+        stores = _get_stores_config(request)
         if store_id in stores:
-            store_name = stores[store_id].get("STORE_NAME", "")
+            store_name = stores[store_id].get("store_name", "")
             return store_name.split("-")[1] if "-" in store_name else store_name
     
     return None
@@ -99,9 +104,9 @@ def get_current_store_id(request: Request = None):
 
     env_store = os.getenv("STORE_NAME")
     if env_store:
-        stores = config.get("stores", {})
+        stores = _get_stores_config(request)
         for sid, sconfig in stores.items():
-            if sconfig.get("STORE_NAME") == env_store:
+            if sconfig.get("store_name") == env_store:
                 return sid
 
     return None
@@ -110,23 +115,19 @@ def get_store_config(request: Request = None):
     """Get the full store configuration"""
     store_id = None
     
-    # Try to get from custom header
     if request:
         store_id = request.headers.get("X-Selected-Store")
     
-    # Fallback to environment variable
     if not store_id:
         env_store = os.getenv("STORE_NAME")
         if env_store:
-            # Find store_id by STORE_NAME
-            stores = config.get("stores", {})
+            stores = _get_stores_config(request)
             for sid, sconfig in stores.items():
-                if sconfig.get("STORE_NAME") == env_store:
+                if sconfig.get("store_name") == env_store:
                     return sconfig
     
-    # Get store config using store_id
     if store_id:
-        stores = config.get("stores", {})
+        stores = _get_stores_config(request)
         return stores.get(store_id)
     
     return None
@@ -576,11 +577,11 @@ async def sync_file(
     
     resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
 
-    if _is_done_file(filename):
-        raise HTTPException(
-            status_code=400,
-            detail="This file is already marked as DONE and cannot be synced again.",
-        )
+    # if _is_done_file(filename):
+    #     raise HTTPException(
+    #         status_code=400,
+    #         detail="This file is already marked as DONE and cannot be synced again.",
+    #     )
 
     file_path = os.path.join(resources_dir, filename)
 
