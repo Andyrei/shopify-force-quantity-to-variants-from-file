@@ -305,6 +305,9 @@ async def delete_resource(
     request: Request,
     filename: str = Path(..., description="The name of the file to delete")
 ):
+    """
+    Delete a resource file from the store's resources directory. This is a permanent action and cannot be undone.
+    """
     store_name = get_current_store_name(request)
     if not store_name:
         raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
@@ -320,6 +323,27 @@ async def delete_resource(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error deleting file: {e}")
 
+@router.get("/resources/{filename}")
+async def download_resource(
+    request: Request,
+    filename: str = Path(..., description="The name of the file to download"),
+    download: bool = Query(False, description="If true, force download")
+):
+    store_name = get_current_store_name(request)
+    if not store_name:
+        raise HTTPException(status_code=400, detail="No store selected. Please select a store.")
+    resources_dir = os.path.join(PROJECT_ROOT, "resources", store_name)
+    file_path = os.path.join(resources_dir, filename)
+
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    media_type = "application/octet-stream"
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        filename=filename if download else None
+    )
 
 @router.get("/check/{filename}")
 async def check_file_structure(

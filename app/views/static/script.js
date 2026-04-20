@@ -99,12 +99,45 @@ document.addEventListener("DOMContentLoaded", function() {
                 </div>
                 <div class="file-actions">
                     ${done ? '' : `<button class="check-btn" data-filename="${encodeURIComponent(f)}">Select & Check</button>`}
-                    <button class="del-btn" data-filename="${encodeURIComponent(f)}">Del</button>
+                    <button class="download-btn" data-filename="${encodeURIComponent(f)}">Download</button>
+                    <button class="del-btn" data-filename="${encodeURIComponent(f)}">Delete</button>
                 </div>
             </li>`;
         }).join("");
         addCheckButtonListeners();
+        addDownloadButtonListeners();
         addDeleteButtonListeners();
+    }
+    // Add event listeners to download buttons
+    function addDownloadButtonListeners() {
+        list.querySelectorAll(".download-btn").forEach(btn => {
+            btn.addEventListener("click", async function() {
+                const filename = decodeURIComponent(this.getAttribute("data-filename"));
+                const url = `/api/v1/resources/${encodeURIComponent(filename)}?download=1`;
+                const selectedStore = localStorage.getItem('selectedStore');
+                try {
+                    const res = await fetch(url, {
+                        headers: selectedStore ? { 'X-Selected-Store': selectedStore } : {}
+                    });
+                    if (!res.ok) {
+                        alert("Download failed: " + (await res.text()));
+                        return;
+                    }
+                    const blob = await res.blob();
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        URL.revokeObjectURL(a.href);
+                        a.remove();
+                    }, 100);
+                } catch (err) {
+                    alert("Download error: " + err);
+                }
+            });
+        });
     }
 
     // Check file structure and show configuration if needed
