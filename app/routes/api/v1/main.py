@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime
 import os
 import json
+import unicodedata
 from fastapi import APIRouter, File, Path, Request, UploadFile, HTTPException, Form, Query
 from fastapi.responses import JSONResponse, StreamingResponse, PlainTextResponse, FileResponse
 import pandas as pd
@@ -11,6 +12,10 @@ from app.utilities.shopify import detect_identifier_type, get_product_variants_b
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
 DONE_SUFFIX = "__DONE__"
+
+# Normalize text: remove accents for column name matching
+def normalize_text(text):
+    return unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('utf-8')
 
 
 def _get_stores_config(request: Request = None) -> dict:
@@ -379,10 +384,13 @@ async def check_file_structure(
         # Convert all column names to lowercase
         df.columns = df.columns.str.lower()
         
-        # Check if required columns exist in the file (now all lowercase)
+        # Normalize column names: remove accents and rename columns
+        df.columns = [normalize_text(col) for col in df.columns]
+        
+        # Check if required columns exist in the file (using normalized names)
         has_location_in_file = any(col in ['id sede', 'location_id', 'location'] for col in df.columns)
         has_sale_channel_in_file = any(col in ['canali di vendita', 'canale di vendita', 'sale_channel'] for col in df.columns)
-        has_quantity_in_file = any(col in ['qta', 'quantity', 'qty', 'qtá', 'qtà'] for col in df.columns)
+        has_quantity_in_file = any(col in ['qta', 'quantity', 'qty'] for col in df.columns)
         has_product_ref_in_file = any(col in ['sku', 'barcode'] for col in df.columns)
         
         missing_fields = []
@@ -533,8 +541,8 @@ async def update_file_with_data(
         else:
             raise HTTPException(status_code=400, detail="Unsupported file type")
         
-        # Convert all column names to lowercase
-        df.columns = df.columns.str.lower()
+        # Convert all column names to lowercase and normalize (remove accents)
+        df.columns = [normalize_text(col) for col in df.columns.str.lower()]
         
         # Add missing columns
         if location_id and not any(col in ['id sede', 'location_id', 'location'] for col in df.columns):
@@ -601,6 +609,9 @@ async def sync_file(
             
             # Transform all column headers to lowercase
             df.columns = df.columns.str.lower()
+            
+            # Normalize column names: remove accents
+            df.columns = [normalize_text(col) for col in df.columns]
             
             print(f"DEBUG: DataFrame columns: {df.columns.tolist()}")
             print(f"DEBUG: DataFrame shape: {df.shape}")

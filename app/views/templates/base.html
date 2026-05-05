@@ -58,10 +58,10 @@
             </script>
             {% endblock %}
         </div>
+        {% if store_name %}
+            <div class="store-badge">{{ store_name }}</div>
+        {% endif %}
         <div class="header-middle">
-            {% if store_name %}
-            <span class="store-badge">{{ store_name }}</span>
-            {% endif %}
             <h1>FORCE QUANTITY</h1>
             <nav>
                 <ul>

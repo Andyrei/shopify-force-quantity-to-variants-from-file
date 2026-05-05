@@ -98,7 +98,7 @@ header h1 {
 
 .store-badge {
     display: inline-block;
-    font-size: 1.5rem;
+    font-size: 2rem;
     margin-bottom: 1rem;
     font-weight: 700;
     padding: 0.4rem 1rem;
@@ -120,8 +120,6 @@ header h1 {
     max-width: var(--page-max-width);
     margin: 0 auto;
     padding: 1rem 2rem;
-    background: linear-gradient(180deg, rgba(0,0,0,0.2) 0%, transparent 100%);
-    border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
 .current-store-display {
@@ -198,8 +196,7 @@ nav {
     display: flex;
     justify-content: center;
     padding: 1.2rem 2rem;
-    margin-top: 0.5rem;
-    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 2rem;
 }
 
 nav ul {
