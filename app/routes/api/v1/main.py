@@ -382,7 +382,7 @@ async def check_file_structure(
         # Check if required columns exist in the file (now all lowercase)
         has_location_in_file = any(col in ['id sede', 'location_id', 'location'] for col in df.columns)
         has_sale_channel_in_file = any(col in ['canali di vendita', 'canale di vendita', 'sale_channel'] for col in df.columns)
-        has_quantity_in_file = any(col in ['qta', 'quantity', 'qty', 'qtá'] for col in df.columns)
+        has_quantity_in_file = any(col in ['qta', 'quantity', 'qty', 'qtá', 'qtà'] for col in df.columns)
         has_product_ref_in_file = any(col in ['sku', 'barcode'] for col in df.columns)
         
         missing_fields = []
